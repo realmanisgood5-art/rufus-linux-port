@@ -2,9 +2,12 @@
 
 **An unofficial Linux port of [Rufus](https://rufus.ie), written in Rust.**
 
-Ferrufus aims to reproduce the features and behavior of Rufus, the Reliable USB
-Formatting Utility, as a Linux-native application with no project-owned C/C++
-code and no project-owned `unsafe` Rust.
+Ferrufus aims to reproduce the features and behavior of Rufus, the Reliable
+USB Formatting Utility, as a Linux-native application: formatting USB drives
+and cards, creating bootable Windows, Linux, BSD and DOS media from ISO and
+disk images, persistent Linux live drives, checksums, bad-block checks, and
+more. It is a source-guided port: the original Rufus C code is the reference
+for what to do, translated into safe Rust.
 
 > Ferrufus is **not** affiliated with, endorsed by, or supported by Pete Batard
 > or the Rufus project. Please do not report Ferrufus problems to the Rufus
@@ -12,14 +15,62 @@ code and no project-owned `unsafe` Rust.
 
 ## Status
 
-Early work in progress. The upstream audit, porting documentation, and the
-first read-only milestone are being developed on a feature branch and will land
-here through a pull request.
+**Milestone 1 (read-only preview) is in development.** This build cannot
+write to devices: it has no code that opens a device or file for writing.
+
+Planned for milestone 1:
+
+- Device discovery that applies Rufus' rules for which drives to list (USB
+  drives and cards; USB hard drives only on request; internal disks never; the
+  system disk always excluded), without root privileges.
+- Image identification: ISO 9660/UDF labels, El Torito, ISOHybrid, MBR boot
+  code (ms-sys signatures), GPT, VHD, VHDX, WIM, FFU and compressed images.
+- MD5, SHA-1, SHA-256 and SHA-512 checksums.
+- A dry-run plan for writing an image to a drive, with every safety check and
+  the exact data that would be lost.
+- `ferrufus-cli` (with JSON output) and the `ferrufus` desktop application.
+
+See [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the status of every
+Rufus feature.
+
+## Safety
+
+Ferrufus writes to raw storage devices, so its design starts with not
+destroying the wrong data: it never selects a device for you, never runs its
+GUI as root, re-checks the device's identity before each destructive step, and
+never reports success before data has been flushed and verified. Some Rufus
+behaviors are intentionally not reproduced for this reason; see
+[docs/SECURITY.md](docs/SECURITY.md).
+
+## Building
+
+Requires the Rust toolchain pinned in `rust-toolchain.toml` (installed
+automatically by `rustup`).
+
+```bash
+cargo build --release --locked
+```
+
+```bash
+cargo test --workspace --locked
+```
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) | Every upstream feature, where it lives in Rufus, and its status here |
+| [docs/RUST_PORTING_PLAN.md](docs/RUST_PORTING_PLAN.md) | Upstream baseline, source map, Windows-to-Linux mapping, milestones, blockers |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Crates, the operation pipeline, data model, privilege model, CLI and GUI design |
+| [docs/SECURITY.md](docs/SECURITY.md) | Threat model and data-loss prevention |
+| [docs/TESTING.md](docs/TESTING.md) | Test strategy and acceptance criteria |
+| [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) | Dependencies, tools, platform requirements and licensing |
 
 ## License
 
 Ferrufus is free software, licensed under the GNU General Public License,
-version 3 or (at your option) any later version. See [LICENSE](LICENSE).
+version 3 or (at your option) any later version. See [LICENSE](LICENSE) and
+[NOTICE.md](NOTICE.md).
 
 Rufus is Copyright © Pete Batard and contributors, and is also distributed under
 the GNU General Public License, version 3 or later.
