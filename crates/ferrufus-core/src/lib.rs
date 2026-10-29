@@ -13,6 +13,7 @@
 pub mod cancel;
 pub mod error;
 pub mod hash;
+pub mod image;
 pub mod units;
 pub mod upstream;
 

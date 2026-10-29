@@ -1,5 +1,8 @@
 //! `hash_file()` against real files.
 
+// Test code: a failed expectation should panic.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use ferrufus_core::cancel::CancelToken;
 use ferrufus_core::hash::{HashAlgorithm, hash_file};
 use ferrufus_core::{Error, ErrorKind};
