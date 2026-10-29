@@ -1,0 +1,33 @@
+[package]
+name = "ferrufus-gui"
+description = "Desktop interface of Ferrufus, an unofficial Linux port of Rufus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "ferrufus"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+eframe.workspace = true
+ferrufus-core.workspace = true
+rfd.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+winit.workspace = true
+
+[dev-dependencies]
+egui_kittest.workspace = true
+ferrufus-testkit.workspace = true
+
+[lints]
+workspace = true
