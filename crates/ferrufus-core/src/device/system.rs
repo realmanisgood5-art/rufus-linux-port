@@ -375,6 +375,11 @@ impl Resolver<'_> {
         if depth > MAX_DEPTH {
             return Resolution::unresolved(format!("{}: nested too deeply", path.display()));
         }
+        // A relative path depends on the working directory; callers must
+        // make paths absolute first.
+        if !path.is_absolute() {
+            return Resolution::unresolved(format!("{} is not an absolute path", path.display()));
+        }
         if let Some(mount) = self
             .mount_by_dev(path)
             .or_else(|| self.covering_mount(path))
