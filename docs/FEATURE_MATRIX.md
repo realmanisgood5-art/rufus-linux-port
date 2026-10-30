@@ -32,27 +32,27 @@ separately in [TESTING.md](TESTING.md).
 
 | ID | Feature | Upstream reference | Linux / Rust approach | Status | Milestone |
 |---|---|---|---|---|---|
-| D01 | List USB mass-storage (BOT) drives | `src/dev.c:GetDevices()` (`usbstor_name[]`) | Whole disks from `/sys/class/block`; USB transport from the sysfs device path | ⬜ | M1 |
-| D02 | List UAS (UASP) drives | `src/dev.c:GetDevices()` (`UASPSTOR` and later entries) | USB interface driver `uas` | ⬜ | M1 |
-| D03 | List card readers (USB and non-USB SD/MMC) | `src/dev.c:GetDevices()` (`genstor_name[]`, `scsi_card_name[]`) | `mmcblk*` devices; upstream SCSI card substrings applied to the INQUIRY vendor/model | ⬜ | M1 |
-| D04 | List mounted virtual disks (VHD), `enable_VHDs`, Alt-G | `src/dev.c:GetDevices()` (`IsVHD()`), `src/rufus.c` (`SETTING_DISABLE_VHDS`) | Loop devices with a backing file. **Opt-in** (`--list-virtual`): Linux loops are usually system-managed (snaps, containers) | ⬜ | M1 |
-| D05 | Hide USB hard drives unless "List USB Hard Drives" (`-x/--extra-devs`, Alt-F) | `src/smart.c:IsHDD()`, `src/hdd_vs_ufd.h` | Faithful translation of the scoring heuristic and tables | ⬜ | M1 |
-| D06 | Hide cards larger than 500 GB unless "List USB Hard Drives" | `src/dev.c:GetDevices()` (`MAX_DEFAULT_LIST_CARD_SIZE`) | Same rule | ⬜ | M1 |
-| D07 | List non-USB removable drives only on request (Ctrl-Alt-F) | `src/dev.c:GetDevices()` (`list_non_usb_removable_drives`) | `--list-non-usb-removable`, with a caution | ⬜ | M1 |
-| D08 | Never list non-USB fixed disks | `src/dev.c:GetDevices()` ("most likely dealing with a system drive") | Same rule (NVMe, SATA, virtio, and so on) | ⬜ | M1 |
-| D09 | Hide drives without media or smaller than 8 MB | `src/dev.c:GetDevices()` (`IsMediaPresent()`, `MIN_DRIVE_SIZE`) | `size == 0` means no media; same 8 MB minimum | ⬜ | M1 |
-| D10 | Exclude the system disk and the disk Rufus runs from | `src/dev.c:GetDevices()` (`app_dir`, `system_dir`) | Disks backing `/`, `/boot`, `/boot/efi`, `/efi`, `/usr`, `/var`, active swap, or the running executable/AppImage, through partitions and dm/md holder chains | ⬜ | M1 |
+| D01 | List USB mass-storage (BOT) drives | `src/dev.c:GetDevices()` (`usbstor_name[]`) | Whole disks from `/sys/class/block`; USB transport from the sysfs device path | ✅ | M1 |
+| D02 | List UAS (UASP) drives | `src/dev.c:GetDevices()` (`UASPSTOR` and later entries) | USB interface driver `uas` | ✅ | M1 |
+| D03 | List card readers (USB and non-USB SD/MMC) | `src/dev.c:GetDevices()` (`genstor_name[]`, `scsi_card_name[]`) | `mmcblk*` devices; upstream SCSI card substrings applied to the INQUIRY vendor/model | ✅ | M1 |
+| D04 | List mounted virtual disks (VHD), `enable_VHDs`, Alt-G | `src/dev.c:GetDevices()` (`IsVHD()`), `src/rufus.c` (`SETTING_DISABLE_VHDS`) | Loop devices with a backing file. **Opt-in** (`--list-virtual`): Linux loops are usually system-managed (snaps, containers) | ✅ | M1 |
+| D05 | Hide USB hard drives unless "List USB Hard Drives" (`-x/--extra-devs`, Alt-F) | `src/smart.c:IsHDD()`, `src/hdd_vs_ufd.h` | Faithful translation of the scoring heuristic and tables | ✅ | M1 |
+| D06 | Hide cards larger than 500 GB unless "List USB Hard Drives" | `src/dev.c:GetDevices()` (`MAX_DEFAULT_LIST_CARD_SIZE`) | Same rule | ✅ | M1 |
+| D07 | List non-USB removable drives only on request (Ctrl-Alt-F) | `src/dev.c:GetDevices()` (`list_non_usb_removable_drives`) | `--list-non-usb-removable`, with a caution | ✅ | M1 |
+| D08 | Never list non-USB fixed disks | `src/dev.c:GetDevices()` ("most likely dealing with a system drive") | Same rule (NVMe, SATA, virtio, and so on) | ✅ | M1 |
+| D09 | Hide drives without media or smaller than 8 MB | `src/dev.c:GetDevices()` (`IsMediaPresent()`, `MIN_DRIVE_SIZE`) | `size == 0` means no media; same 8 MB minimum | ✅ | M1 |
+| D10 | Exclude the system disk and the disk Rufus runs from | `src/dev.c:GetDevices()` (`app_dir`, `system_dir`) | Disks backing `/` and system directories (`/boot`, `/efi`, `/usr`, `/var`, `/home`, ...), active swap, or the running executable/AppImage, through partitions, dm/md holders, loop backing files, btrfs members and overlays. An unresolved system mount blocks every plan | ✅ | M1 |
 | D11 | User ignore lists (`IgnoreUsb01`–`08` VID:PID, `IgnoreDisk01`–`08` GPT disk GUID) | `src/dev.c:GetDevices()`, `src/drive.c:IsFilteredDrive()` | Configuration file entries | ⬜ | M8 |
 | D12 | Hide Microsoft Dev Drives, Windows Sandbox and Bitdefender VHDs | `src/drive.c:IsMsDevDrive()`, `src/dev.c:GetDevices()` | Windows-only artifacts | ➖ | — |
-| D13 | Sort drives by size; display "label (letters) [size]" | `src/dev.c:GetDevices()`, `src/stdio.c:SizeToHumanReadable()` | Same sort and size formatting; device node shown instead of drive letters | ⬜ | M1 |
-| D14 | Reselect the previous drive, otherwise select the first one | `src/dev.c:GetDevices()` (lines 1072–1081) | **Deliberate deviation:** never auto-select a device; selection always starts empty | ⬜ | M1 |
-| D15 | USB version and speed reporting | `src/dev.c:GetUSBProperties()` | sysfs `version` and `speed` of the USB device | ⬜ | M1 |
-| D16 | Refresh the list on hotplug | `src/rufus.c:MainCallback()` (`WM_DEVICECHANGE`) | Periodic sysfs polling in M1; kernel uevents later. Never changes the selection | ⬜ | M1 |
+| D13 | Sort drives by size; display "label (letters) [size]" | `src/dev.c:GetDevices()`, `src/stdio.c:SizeToHumanReadable()` | Same sort and size formatting; device node shown instead of drive letters | ✅ | M1 |
+| D14 | Reselect the previous drive, otherwise select the first one | `src/dev.c:GetDevices()` (lines 1072–1081) | **Deliberate deviation:** never auto-select a device; selection always starts empty | ✅ | M1 |
+| D15 | USB version and speed reporting | `src/dev.c:GetUSBProperties()` | sysfs `version` and `speed` of the USB device | ✅ | M1 |
+| D16 | Refresh the list on hotplug | `src/rufus.c:MainCallback()` (`WM_DEVICECHANGE`) | Periodic sysfs polling in M1; kernel uevents later. Never changes the selection | 🟡 | M1 |
 | D17 | Cycle USB port / reset device (Alt-C) | `src/dev.c:CyclePort()`, `CycleDevice()` | USB `authorized` toggle through the privileged boundary | ⬜ | M8 |
 | D18 | Report processes that hold the drive open | `src/process.c` (`SearchProcessThread()`) | `/proc/*/fd` scan; requires privileges for other users' processes | ⬜ | M3 |
-| D19 | Stable device identity and revalidation before destructive steps | Not in upstream (drive index and label only) | `diskseq`, `dev_t`, size, block size, serial, model, sysfs path | ⬜ | M1 |
-| D20 | Show existing partitions, file systems and labels | `src/drive.c:GetDrivePartitionData()` | udev database and sysfs (no device read access needed) | ⬜ | M1 |
-| D21 | USB enumeration debug output (Alt-.) | `src/dev.c` (`usb_debug`) | `--verbose` / `RUST_LOG=debug`, with listing reasons | ⬜ | M1 |
+| D19 | Stable device identity and revalidation before destructive steps | Not in upstream (drive index and label only) | `diskseq`, `dev_t`, size, block size, serial, model, sysfs path | ✅ | M1 |
+| D20 | Show existing partitions, file systems and labels | `src/drive.c:GetDrivePartitionData()` | udev database and sysfs (no device read access needed) | ✅ | M1 |
+| D21 | USB enumeration debug output (Alt-.) | `src/dev.c` (`usb_debug`) | `ferrufus-cli devices --all` shows every exclusion reason with its upstream rule; `FERRUFUS_LOG=debug` | 🟡 | M1 |
 
 ## B. Partitioning
 
@@ -94,7 +94,7 @@ separately in [TESTING.md](TESTING.md).
 | ID | Feature | Upstream reference | Linux / Rust approach | Status | Milestone |
 |---|---|---|---|---|---|
 | B01 | Non bootable | `src/rufus.c` (`BT_NON_BOOTABLE`) | Plan in M2, execute in M4 | ⬜ | M2/M4 |
-| B02 | Disk or ISO image | `src/rufus.c` (`BT_IMAGE`) | DD-mode planning in M1; see section E | ⬜ | M1+ |
+| B02 | Disk or ISO image | `src/rufus.c` (`BT_IMAGE`) | DD-mode planning in M1; see section E | 🟠 | M1+ |
 | B03 | MS-DOS (`diskcopy.dll` downloaded from the Microsoft symbol server) | `src/dos.c:ExtractMSDOS()`, `src/rufus.c:BootCheckThread()` | Runtime download only (Microsoft files are never redistributed) | ⬜ | M5 |
 | B04 | FreeDOS | `src/dos.c:ExtractFreeDOS()`, `res/freedos/` | Same files and patching | ⬜ | M5 |
 | B05 | Syslinux 4.07 and 6.04 (advanced mode) | `src/syslinux.c:InstallSyslinux()`, `res/syslinux/` | Translation of the installer logic | ⬜ | M4 |
@@ -108,22 +108,22 @@ separately in [TESTING.md](TESTING.md).
 
 | ID | Feature | Upstream reference | Linux / Rust approach | Status | Milestone |
 |---|---|---|---|---|---|
-| I01 | ISO 9660 detection and volume label (Joliet preference rule) | `src/iso.c:ExtractISO()`, libcdio `iso9660_fs.c:get_member_id()` | Own bounded parser; exact label rule | ⬜ | M1 |
-| I02 | UDF detection and logical volume label (tried before ISO 9660) | `src/iso.c:ExtractISO()` (`udf_open()`, `udf_get_logical_volume_id()`) | Own bounded parser | ⬜ | M1 |
+| I01 | ISO 9660 detection and volume label (Joliet preference rule) | `src/iso.c:ExtractISO()`, libcdio `iso9660_fs.c:get_member_id()` | Own bounded parser; exact label rule | ✅ | M1 |
+| I02 | UDF detection and logical volume label (tried before ISO 9660) | `src/iso.c:ExtractISO()` (`udf_open()`, `udf_get_logical_volume_id()`) | Own bounded parser | ✅ | M1 |
 | I03 | ISO content scan (bootloaders, EFI loaders, files over 4 GB, Windows, and so on) | `src/iso.c:check_iso_props()`, `src/rufus.c:GetBootladerInfo()` | Directory reader plus pure translation of the scan rules | ⬜ | M2 |
 | I04 | ISO extraction (file-copy mode) | `src/iso.c:ExtractISO()`, `iso_extract_files()`, `udf_extract_files()` | Same, with path sanitizing | ⬜ | M4 |
-| I05 | ISOHybrid detection and the ISO-mode versus DD-mode choice (ISO mode recommended) | `src/rufus.c:ImageScanThread()`, `BootCheckThread()` | M1 offers DD mode only and reports that upstream recommends ISO mode | ⬜ | M1/M4 |
+| I05 | ISOHybrid detection and the ISO-mode versus DD-mode choice (ISO mode recommended) | `src/rufus.c:ImageScanThread()`, `BootCheckThread()` | M1 offers DD mode only and reports that upstream recommends ISO mode | 🟠 | M1/M4 |
 | I06 | ISO → ESP mode for small EFI images on GPT | `src/rufus.c:BootCheckThread()` (`MAX_ISO_TO_ESP_SIZE`) | Same | ⬜ | M4 |
-| I07 | Write a raw disk image (DD mode) | `src/format.c:WriteDrive()`, `FormatThread()` | Dry-run plan in M1; streaming writer and read-back verification in M3 | ⬜ | M1/M3 |
-| I08 | Compressed images (`.gz .xz .bz2 .zst .lzma .zip .Z .vtsi`) | `src/vhd.c:IsCompressedBootableImage()` (`file_assoc[]`), bled | Detection (extension plus magic) in M1; pure-Rust decompressors in M3 | ⬜ | M1/M3 |
-| I09 | VHD images (fixed and dynamic) | `src/vhd.c:VhdMountImageAndGetSize()` | Footer parsing in M1; reader in M3 | ⬜ | M1/M3 |
-| I10 | VHDX images | `src/vhd.c` | Signature in M1; reader in M6 | ⬜ | M1/M6 |
+| I07 | Write a raw disk image (DD mode) | `src/format.c:WriteDrive()`, `FormatThread()` | Dry-run plan in M1; streaming writer and read-back verification in M3 | 🟠 | M1/M3 |
+| I08 | Compressed images (`.gz .xz .bz2 .zst .lzma .zip .Z .vtsi`) | `src/vhd.c:IsCompressedBootableImage()` (`file_assoc[]`), bled | Detection (extension plus magic) in M1; pure-Rust decompressors in M3 | 🟠 | M1/M3 |
+| I09 | VHD images (fixed and dynamic) | `src/vhd.c:VhdMountImageAndGetSize()` | Footer parsing in M1; reader in M3 | 🟠 | M1/M3 |
+| I10 | VHDX images | `src/vhd.c` | Signature in M1; reader in M6 | 🟠 | M1/M6 |
 | I11 | Apply FFU images | `src/format.c:FormatThread()` (`dism /Apply-Ffu`) | dism-only; needs an independent FFU specification | ⛔ | — |
-| I12 | WIM files as boot selection | `src/vhd.c:IsBootableImage()` (`WIM_MAGIC`), `src/rufus.c:ImageScanThread()` | Detection in M1; handling in M6 | ⬜ | M1/M6 |
-| I13 | Boot marker check; ignore it on request (Alt-M) | `src/vhd.c:IsBootableImage()`, `src/drive.c:AnalyzeMBR()` | Same 0/1/2 result | ⬜ | M1 |
-| I14 | Identify the MBR type (ms-sys signatures) | `src/drive.c:AnalyzeMBR()`, `src/ms-sys/br.c` | Byte tables generated from upstream; upstream match order | ⬜ | M1 |
-| I15 | Image larger than the drive check (Alt-S disables it) | `src/rufus.c:BootCheckThread()` (line 1531) | **Stricter:** no 4 KB slack for raw payloads; the check cannot be disabled | ⬜ | M1 |
-| I16 | Refuse an image stored on the target drive | `src/drive.c:IsSourceImageLocatedOnTargetDrive()` | `st_dev` of the image resolved through partitions and holders | ⬜ | M1 |
+| I12 | WIM files as boot selection | `src/vhd.c:IsBootableImage()` (`WIM_MAGIC`), `src/rufus.c:ImageScanThread()` | Detection in M1; handling in M6 | 🟠 | M1/M6 |
+| I13 | Boot marker check; ignore it on request (Alt-M) | `src/vhd.c:IsBootableImage()`, `src/drive.c:AnalyzeMBR()` | Same 0/1/2 result | ✅ | M1 |
+| I14 | Identify the MBR type (ms-sys signatures) | `src/drive.c:AnalyzeMBR()`, `src/ms-sys/br.c` | Byte tables generated from upstream; upstream match order | ✅ | M1 |
+| I15 | Image larger than the drive check (Alt-S disables it) | `src/rufus.c:BootCheckThread()` (line 1531) | **Stricter:** no 4 KB slack for raw payloads; the check cannot be disabled | ✅ | M1 |
+| I16 | Refuse an image stored on the target drive | `src/drive.c:IsSourceImageLocatedOnTargetDrive()` | The image's disk is found through its `st_dev` (running system) or its mount, then partitions and holders; an image whose disk cannot be determined blocks the plan | 🟡 | M1 |
 | I17 | Copy additional files from a zip archive (Ctrl-SELECT) | `src/rufus.c:MainCallback()`, `src/stdio.c:ExtractZip()` | Same | ⬜ | M4 |
 | I18 | Toggle Joliet (Alt-J), Rock Ridge (Alt-K), ISO support (Alt-I) | `src/iso.c` (`enable_joliet`, `enable_rockridge`, `enable_iso`) | Expert options | ⬜ | M2 |
 | I19 | Preserve timestamps (Alt-T) | `src/iso.c` (`preserve_timestamps`) | Same | ⬜ | M4 |
@@ -187,9 +187,9 @@ separately in [TESTING.md](TESTING.md).
 
 | ID | Feature | Upstream reference | Linux / Rust approach | Status | Milestone |
 |---|---|---|---|---|---|
-| H01 | MD5, SHA-1 and SHA-256 of the selected image | `src/hash.c:HashThread()`, `HashFile()` | RustCrypto, one pass over the file | ⬜ | M1 |
-| H02 | SHA-512 (Alt-H, `EnableExtraHashes`) | `src/hash.c` (`enable_extra_hashes`) | `--sha512` | ⬜ | M1 |
-| H03 | Compare against an expected checksum | Not in upstream | `--expect algo:hex` | ⬜ | M1 |
+| H01 | MD5, SHA-1 and SHA-256 of the selected image | `src/hash.c:HashThread()`, `HashFile()` | RustCrypto, one pass over the file | ✅ | M1 |
+| H02 | SHA-512 (Alt-H, `EnableExtraHashes`) | `src/hash.c` (`enable_extra_hashes`) | `--sha512` | ✅ | M1 |
+| H03 | Compare against an expected checksum | Not in upstream | `--expect algo:hex` | ✅ | M1 |
 | H04 | Save a drive to VHD | `src/vhd.c:SaveImage()` (`CreateVirtualDisk`) | Fixed VHD writer | ⬜ | M7 |
 | H05 | Save a drive to VHDX | `src/vhd.c:SaveImage()` | VHDX writer | ⬜ | M7 |
 | H06 | Save a drive to FFU | `src/vhd.c` (`dism /Capture-Ffu`) | dism-only | ⛔ | — |
@@ -197,7 +197,7 @@ separately in [TESTING.md](TESTING.md).
 | H08 | Bad blocks check (1–4 passes; SLC, MLC and TLC patterns) | `src/badblocks.c:BadBlocks()` | Translation (derived from e2fsprogs badblocks) | ⬜ | M7 |
 | H09 | Fake capacity detection (Alt-B disables it) | `src/badblocks.c` (`detect_fakes`) | Same block-numbering method | ⬜ | M7 |
 | H10 | Read-back verification after a DD write | Not in upstream | Port addition, on by default | ⬜ | M3 |
-| H11 | Log window (save, clear), persistent log (Ctrl-P) | `src/rufus.c:LogCallback()` | GUI log panel in M1; saving later | ⬜ | M1 |
+| H11 | Log window (save, clear), persistent log (Ctrl-P) | `src/rufus.c:LogCallback()` | GUI log panel in M1; saving later | 🟡 | M1 |
 
 ## J. Secure Boot and UEFI checks
 
@@ -225,15 +225,15 @@ separately in [TESTING.md](TESTING.md).
 
 | ID | Feature | Upstream reference | Linux / Rust approach | Status | Milestone |
 |---|---|---|---|---|---|
-| U01 | Main window layout (Drive Properties, Format Options, Status) | `src/rufus.rc` (`IDD_DIALOG`) | egui; only implemented controls are shown | ⬜ | M1 (read-only subset) |
-| U02 | Advanced drive properties and format options sections | `src/ui.c:ToggleAdvancedDeviceOptions()`, `ToggleAdvancedFormatOptions()` | Same | ⬜ | M1/M2 |
+| U01 | Main window layout (Drive Properties, Format Options, Status) | `src/rufus.rc` (`IDD_DIALOG`) | egui; only implemented controls are shown | 🟠 | M1 (read-only subset) |
+| U02 | Advanced drive properties and format options sections | `src/ui.c:ToggleAdvancedDeviceOptions()`, `ToggleAdvancedFormatOptions()` | Same | 🟠 | M1/M2 |
 | U03 | Localization (38 languages, `rufus.loc`, right-to-left) | `src/localization.c`, `src/parser.c`, `res/loc/rufus.loc` | Reuse `rufus.loc` | ⬜ | M8 |
-| U04 | Dark mode (Ctrl-Alt-D) | `src/darkmode.c` | Follows the desktop theme | ⬜ | M1 |
+| U04 | Dark mode (Ctrl-Alt-D) | `src/darkmode.c` | Follows the desktop theme (eframe default; not covered by tests) | 🟡 | M1 |
 | U05 | Progress with speed and time estimate; taskbar progress | `src/ui.c:UpdateProgress()`, `src/stdlg.c:SetTaskbarProgressValue()` | Progress in the write engine; taskbar progress is Windows-only | ⬜ | M3 |
 | U06 | Destructive operation confirmation | `src/rufus.c:MainCallback()` (`MSG_003`) | Exact device, identity and data-loss summary; typed confirmation in the CLI | ⬜ | M3 |
 | U07 | About and license dialogs | `src/stdlg.c:AboutCallback()`, `LicenseCallback()` | About panel | ⬜ | M1 |
 | U08 | Settings (registry, or `rufus.ini` in portable mode) | `src/settings.h`, `src/registry.h` | XDG configuration file; never able to weaken safety checks | ⬜ | M8 |
-| U09 | Accessibility (accessible control names) | `src/ui.c:SetAccessibleName()` | AccessKit | ⬜ | M1 |
+| U09 | Accessibility (accessible control names) | `src/ui.c:SetAccessibleName()` | AccessKit | ✅ | M1 |
 | U10 | Expert mode (Ctrl-Alt-E) | `src/rufus.c` (`expert_mode`) | Same | ⬜ | M6 |
 | U11 | Thread priority (Alt +/-) | `src/rufus.c` (`SETTING_DEFAULT_THREAD_PRIORITY`) | Evaluate | ⬜ | M8 |
 | U12 | Status bar timer | `src/rufus.c:ClockTimer()` | Same | ⬜ | M3 |
@@ -242,13 +242,13 @@ separately in [TESTING.md](TESTING.md).
 
 | ID | Feature | Upstream reference | Linux / Rust approach | Status | Milestone |
 |---|---|---|---|---|---|
-| C01 | `-x`, `--extra-devs` (list USB hard drives) | `src/rufus.c:WinMain()` | `ferrufus-cli devices -x`, GUI `-x` | ⬜ | M1 |
-| C02 | `-i PATH`, `--iso=PATH` (preselect an image) | `src/rufus.c:WinMain()` | GUI `-i/--iso`; the CLI uses `--image` | ⬜ | M1 |
+| C01 | `-x`, `--extra-devs` (list USB hard drives) | `src/rufus.c:WinMain()` | `ferrufus-cli devices -x`, GUI `-x` | ✅ | M1 |
+| C02 | `-i PATH`, `--iso=PATH` (preselect an image) | `src/rufus.c:WinMain()` | GUI `-i/--iso`; the CLI uses `--image` | 🟡 | M1 |
 | C03 | `-f FS`, `--filesystem=FS` (preferred file system) | `src/rufus.c:WinMain()` (`preselected_fs`) | Same | ⬜ | M2 |
 | C04 | `-l LOCALE`, `--locale=LOCALE` | `src/rufus.c:WinMain()` | Same | ⬜ | M8 |
 | C05 | `-g`, `--gui` and the `rufus.com` console hogger | `src/rufus.c:SetHogger()` | Separate `ferrufus` and `ferrufus-cli` binaries | ➖ | — |
 | C06 | `-w TIMEOUT`, `--wait=TIMEOUT` (application mutex) | `src/rufus.c:WinMain()` | Single-instance handling, evaluate | ⬜ | M8 |
-| C07 | Scriptable, non-interactive operation with structured output | Not in upstream | JSON output, stable exit codes, same safety checks | ⬜ | M1 |
+| C07 | Scriptable, non-interactive operation with structured output | Not in upstream | JSON output, stable exit codes, same safety checks | ✅ | M1 |
 
 Cheat modes that map to rows above: Alt-B (H09), Alt-C (D17), Alt-E (W02), Alt-F (D05),
 Alt-G (D04), Alt-H (H02), Alt-I/J/K (I18), Alt-L (F02), Alt-M (I13), Alt-N (F03), Alt-O (I21),

@@ -54,19 +54,19 @@ The exact resolved versions are pinned in `Cargo.lock`.
 | Tool | Version | Used for | Notes |
 |---|---|---|---|
 | Rust toolchain | pinned in `rust-toolchain.toml` | Building | Stable channel |
-| `cargo-deny` | installed by `taiki-e/install-action` (pinned SHA) | License, advisory and source checks | CI only |
-| `appimagetool` | 1.9.1 (pinned SHA-256) | Building the AppImage | Third-party C tool, packaging only, never shipped inside the application |
+| `cargo-deny` | 0.20.2, installed by `taiki-e/install-action` (pinned SHA) | License, advisory and source checks | CI only |
+| `appimagetool` | 1.9.1 (pinned SHA-256) | Building the AppImage | Third-party C tool, packaging only, never shipped inside the application. The hash was recorded from the official release asset when the pin was added (trust on first use) |
 | AppImage `type2-runtime` | 20251108 (pinned SHA-256) | The AppImage's startup stub | Statically linked C program embedded in the AppImage file by the AppImage format itself; it mounts the image and starts `AppRun`. It is not project-owned code |
 | GitHub Actions | pinned by commit SHA | CI | `actions/checkout`, `Swatinem/rust-cache`, `taiki-e/install-action`, `actions/upload-artifact`, `actions/download-artifact`, `actions/attest-build-provenance` |
 | `gh` | runner image | Creating releases | Uses the workflow's `GITHUB_TOKEN` |
-| `actionlint`, `zizmor` | local | Workflow linting and security review | Development only |
+| `actionlint`, `zizmor` | 1.7.12, 1.31.1 (local) | Workflow linting and security review | Development only; not run in CI yet |
 
 ## Platform requirements at run time
 
 | Requirement | Needed by | Notes |
 |---|---|---|
 | Linux with sysfs and procfs | everything | `diskseq` (Linux 5.15+) strengthens identity checks |
-| glibc | everything | The AppImage is built against an older glibc baseline documented in the CI check (≤ 2.35) |
+| glibc 2.35 or newer | everything | `packaging/check-elf.sh` fails the build if a binary needs a newer glibc or any shared library besides `libc`, `libm`, `libgcc_s` and the dynamic loader. Version needs that are only weak (Rust std's optional `pidfd_spawnp`) are allowed, since they do not prevent loading |
 | udev database (`/run/udev/data`) | device details | Optional; less detail without it |
 | OpenGL or GLES, X11 or Wayland, xkbcommon | GUI | Provided by the desktop; loaded at run time |
 | `xdg-desktop-portal` | GUI file chooser | Optional; path entry and drag and drop work without it |

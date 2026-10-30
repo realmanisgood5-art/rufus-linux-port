@@ -15,10 +15,11 @@ for what to do, translated into safe Rust.
 
 ## Status
 
-**Milestone 1 (read-only preview) is in development.** This build cannot
-write to devices: it has no code that opens a device or file for writing.
+**Milestone 1 (read-only preview).** This build cannot write to devices: it
+has no code that opens a device or file for writing, and a source policy
+check enforces that.
 
-Planned for milestone 1:
+Milestone 1 provides:
 
 - Device discovery that applies Rufus' rules for which drives to list (USB
   drives and cards; USB hard drives only on request; internal disks never; the
@@ -32,6 +33,47 @@ Planned for milestone 1:
 
 See [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the status of every
 Rufus feature.
+
+## Downloads
+
+Every merge to `main` publishes `Ferrufus-x86_64.AppImage` in the rolling
+[`continuous`](../../releases/tag/continuous) pre-release; each new version
+also gets a permanent `v<version>` release. Each release has a `SHA256SUMS`
+file.
+
+```bash
+chmod +x Ferrufus-x86_64.AppImage
+```
+
+```bash
+./Ferrufus-x86_64.AppImage
+```
+
+```bash
+./Ferrufus-x86_64.AppImage cli devices --all
+```
+
+```bash
+./Ferrufus-x86_64.AppImage cli plan --device /dev/sdX --image image.iso
+```
+
+`cli` runs `ferrufus-cli`; anything else starts the desktop application,
+which refuses to run as root. Without FUSE, add `--appimage-extract-and-run`
+before the arguments.
+
+### Command line
+
+| Command | Does |
+|---|---|
+| `ferrufus-cli devices [--all] [-x] [--list-non-usb-removable] [--list-virtual]` | Lists the drives that can be written to (none is ever selected for you); `--all` shows excluded drives and why |
+| `ferrufus-cli inspect IMAGE` | Analyzes an image the way Rufus does |
+| `ferrufus-cli hash FILE [--sha512] [--algo LIST] [--expect ALGO:HEX]` | Computes checksums |
+| `ferrufus-cli plan --device DEV --image IMAGE [--no-verify]` | Shows what writing the image would do (dry run) |
+
+Every command accepts `--json` (schemas `ferrufus.devices/v1`,
+`ferrufus.image-report/v1`, `ferrufus.hash/v1`, `ferrufus.plan/v1`). Exit
+codes: 0 success, 1 error, 2 usage, 3 plan blocked, 4 device not found or
+ambiguous, 5 image unreadable, 6 checksum mismatch, 130 interrupted.
 
 ## Safety
 

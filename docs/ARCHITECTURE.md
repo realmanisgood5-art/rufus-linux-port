@@ -38,8 +38,7 @@ audited separately.
 | `hash` | Single-pass MD5/SHA-1/SHA-256/SHA-512 over any reader, with progress and cancellation | `src/hash.c` |
 | `image` | Image inspection: extension and magic detection, MBR and ms-sys identification, GPT, ISO 9660/Joliet/El Torito, UDF, VHD, VHDX, WIM, FFU | `src/vhd.c:IsBootableImage()`, `src/drive.c:AnalyzeMBR()`, `src/iso.c:ExtractISO()` |
 | `device` | Read-only discovery from sysfs, procfs and the udev database; system-disk detection; the Rufus listing policy; device identity and revalidation | `src/dev.c:GetDevices()`, `src/smart.c:IsHDD()` |
-| `safety` | Check results (pass, warning, blocking) shared by every front end | `src/rufus.c:BootCheckThread()` |
-| `plan` | Dry-run operation plans with stages, checks, a data-loss summary and a fingerprint | `src/format.c:FormatThread()` |
+| `plan` | DD dry-run plans: pass/warning/blocking checks with their upstream rule, stages, a data-loss summary and a fingerprint; `prepare_dd()` runs the scan, inspection and planning for both front ends | `src/rufus.c:BootCheckThread()`, `src/format.c:FormatThread()`, `src/format.c:WriteDrive()` |
 
 Planned modules: `rules` (M2), `partition` (M2/M4), `writer` (M3),
 `filesystem` and `boot` (M4), `persistence` (M5), `windows` (M6),
