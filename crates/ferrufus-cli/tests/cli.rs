@@ -130,7 +130,7 @@ fn inspect_reports_and_fails_with_the_image_code() {
     let output = run(&system, &["inspect", "--json", path.to_str().unwrap()]);
     assert_eq!(code(&output), 0);
     let value = json(&output);
-    assert_eq!(value["schema"], "ferrufus.image-report/v1");
+    assert_eq!(value["schema"], "ferrufus.image-report/v2");
     assert_eq!(value["classification"], "disk-image");
 
     let missing = run(
@@ -197,7 +197,7 @@ fn plan_is_a_dry_run_with_stable_exit_codes() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value = json(&output);
-    assert_eq!(value["schema"], "ferrufus.plan/v1");
+    assert_eq!(value["schema"], "ferrufus.plan/v2");
     assert_eq!(value["plan"]["blocked"], false);
     assert_eq!(value["plan"]["executable"], false);
     assert_eq!(value["image_disks"], serde_json::json!(["nvme0n1"]));
@@ -279,5 +279,120 @@ fn usage_and_version() {
     assert!(
         help.contains("not affiliated with or endorsed by the Rufus project"),
         "{help}"
+    );
+}
+
+/// A small Linux ISO with Syslinux and a UEFI boot loader.
+fn linux_iso(dir: &Path) -> PathBuf {
+    let mut isolinux = vec![0u8; 4096];
+    isolinux[1000..1014].copy_from_slice(b"ISOLINUX 6.04 ");
+    let mut fs = ferrufus_testkit::isofs::IsoFs::new(
+        "LIVE_ISO",
+        vec![
+            ferrufus_testkit::isofs::Node::dir(
+                "isolinux",
+                vec![
+                    ferrufus_testkit::isofs::Node::file("isolinux.cfg", b"x"),
+                    ferrufus_testkit::isofs::Node::file("isolinux.bin", &isolinux),
+                ],
+            ),
+            ferrufus_testkit::isofs::Node::dir(
+                "EFI",
+                vec![ferrufus_testkit::isofs::Node::dir(
+                    "BOOT",
+                    vec![ferrufus_testkit::isofs::Node::file(
+                        "BOOTX64.EFI",
+                        &[1; 4096],
+                    )],
+                )],
+            ),
+        ],
+    );
+    fs.rock_ridge = true;
+    images::write_file(dir, "live.iso", &fs.build())
+}
+
+#[test]
+fn options_and_iso_and_format_plans() {
+    let system = system();
+    let dir = tempfile::tempdir().unwrap();
+    let iso = linux_iso(dir.path());
+    let iso = iso.to_str().unwrap();
+
+    let inspect = json(&run(&system, &["inspect", "--json", iso]));
+    assert_eq!(inspect["iso_scan"]["cfg_path"], "/isolinux/isolinux.cfg");
+    assert_eq!(inspect["classification"], "iso");
+
+    let options = run(
+        &system,
+        &["options", "--json", "--device", "sdb", "--image", iso],
+    );
+    assert_eq!(
+        code(&options),
+        0,
+        "{}",
+        String::from_utf8_lossy(&options.stderr)
+    );
+    let options = json(&options);
+    assert_eq!(options["schema"], "ferrufus.options/v1");
+    assert_eq!(options["file_system"], "fat32");
+    assert_eq!(options["label"], "LIVE_ISO");
+    let text = text(&run(
+        &system,
+        &["options", "--device", "sdb", "--image", iso],
+    ));
+    assert!(text.contains("* FAT32"), "{text}");
+
+    let plan = run(
+        &system,
+        &[
+            "plan", "--json", "--mode", "iso", "--device", "sdb", "--image", iso,
+        ],
+    );
+    assert_eq!(code(&plan), 0, "{}", String::from_utf8_lossy(&plan.stdout));
+    let plan = json(&plan);
+    assert_eq!(plan["plan"]["mode"], "iso");
+    assert_eq!(plan["plan"]["executable"], false);
+    assert_eq!(plan["plan"]["layout"][0]["name"], "Main Data Partition");
+    assert_eq!(plan["plan"]["format"]["file_system"], "fat32");
+
+    // ISO mode onto the system disk is blocked.
+    assert_eq!(
+        code(&run(
+            &system,
+            &[
+                "plan", "--mode", "iso", "--device", "nvme0n1", "--image", iso
+            ]
+        )),
+        3
+    );
+
+    // Without an image: a plain format.
+    let format = run(
+        &system,
+        &[
+            "plan", "--json", "--device", "sdb", "--fs", "exfat", "--label", "DATA",
+        ],
+    );
+    assert_eq!(
+        code(&format),
+        0,
+        "{}",
+        String::from_utf8_lossy(&format.stdout)
+    );
+    let format = json(&format);
+    assert_eq!(format["plan"]["mode"], "format");
+    assert_eq!(format["plan"]["format"]["file_system"], "exfat");
+    assert_eq!(format["plan"]["format"]["label"], "DATA");
+
+    // ISO mode needs an image.
+    assert_eq!(
+        code(&run(&system, &["plan", "--mode", "iso", "--device", "sdb"])),
+        2
+    );
+    // An unknown file system is a usage error.
+    assert_eq!(
+        code(&run(&system, &["plan", "--device", "sdb", "--fs", "zfs"])),
+        2
     );
 }

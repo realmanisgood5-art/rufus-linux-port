@@ -185,3 +185,81 @@ fn excluded_devices_cannot_be_selected() {
     assert!(!harness.state_mut().select(&nvme));
     assert!(harness.state().selected_device().is_none());
 }
+
+fn live_iso(dir: &std::path::Path) -> PathBuf {
+    use ferrufus_testkit::isofs::{IsoFs, Node};
+    let mut fs = IsoFs::new(
+        "LIVE_ISO",
+        vec![
+            Node::dir(
+                "isolinux",
+                vec![
+                    Node::file("isolinux.cfg", b"x"),
+                    Node::file("isolinux.bin", &[0; 4096]),
+                ],
+            ),
+            Node::dir(
+                "EFI",
+                vec![Node::dir(
+                    "BOOT",
+                    vec![Node::file("BOOTX64.EFI", &[1; 4096])],
+                )],
+            ),
+        ],
+    );
+    fs.rock_ridge = true;
+    images::write_file(dir, "live.iso", &fs.build())
+}
+
+#[test]
+fn format_options_follow_the_image() {
+    let system = system();
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = harness(&system, Some(live_iso(dir.path())));
+    // Nothing selected: no options yet.
+    assert!(harness.state().format_options().is_none());
+    let stick = harness
+        .state()
+        .scan()
+        .unwrap()
+        .listed()
+        .next()
+        .unwrap()
+        .stable_id
+        .clone();
+    harness.state_mut().select(&stick);
+    harness.run();
+    let combo = harness.get_by_role_and_label(Role::ComboBox, "File system");
+    assert_eq!(
+        combo.accesskit_node().value().as_deref(),
+        Some("FAT32 (Default)")
+    );
+    let label = harness.state().format_options().unwrap().label;
+    assert_eq!(label, "LIVE_ISO");
+    // ISO mode is the default for an ISO; the plan creates a partition.
+    harness.get_by_label("Review plan (dry run)").click();
+    harness.run();
+    harness.get_by_label_contains("New partition: Main Data Partition");
+    harness.get_by_label_contains("cannot execute it");
+}
+
+#[test]
+fn a_device_alone_plans_a_format() {
+    let system = system();
+    let mut harness = harness(&system, None);
+    let stick = harness
+        .state()
+        .scan()
+        .unwrap()
+        .listed()
+        .next()
+        .unwrap()
+        .stable_id
+        .clone();
+    harness.state_mut().select(&stick);
+    harness.run();
+    harness.get_by_label("Review plan (dry run)").click();
+    harness.run();
+    harness.get_by_label_contains("ALL DATA ON /dev/sdb");
+    harness.get_by_label_contains("New partition");
+}

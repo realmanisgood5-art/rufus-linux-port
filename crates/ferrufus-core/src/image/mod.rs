@@ -13,9 +13,12 @@
 //! failures are errors.
 
 pub mod compression;
+pub mod fat;
 pub mod gpt;
 pub mod io;
 pub mod iso9660;
+pub mod iso_scan;
+pub mod isofs;
 pub mod mbr;
 pub mod ms_sys;
 mod ms_sys_tables;
@@ -39,6 +42,12 @@ pub struct InspectOptions {
     /// Treat an image without a boot marker as bootable (Rufus Alt-M,
     /// `SETTING_IGNORE_BOOT_MARKER`). The result is reported as "forced".
     pub ignore_boot_marker: bool,
+    /// Do not use Joliet when scanning ISOs (Rufus Alt-J).
+    pub disable_joliet: bool,
+    /// Do not use Rock Ridge when scanning ISOs (Rufus Alt-K).
+    pub disable_rock_ridge: bool,
+    /// Skip the ISO file scan (the volume descriptors are still read).
+    pub no_scan: bool,
 }
 
 /// `img_report.is_bootable_img`.
@@ -117,6 +126,8 @@ pub struct ImageReport {
     pub iso9660: Option<iso9660::Iso9660Report>,
     /// UDF recognition, when an anchor is present.
     pub udf: Option<udf::UdfReport>,
+    /// The ISO file scan, when the image is an ISO.
+    pub iso_scan: Option<iso_scan::IsoScan>,
     /// VHD footer, for `.vhd` files.
     pub vhd: Option<vhd::VhdReport>,
     /// Ventoy sparse image footer, for `.vtsi` files.
@@ -185,14 +196,44 @@ pub fn inspect_source(
     // ExtractISO(scan): UDF first, then ISO 9660.
     let udf = udf::parse(source)?;
     let iso9660 = iso9660::parse(source)?;
-    let (is_iso, label) = match (&udf, &iso9660) {
-        (Some(udf), _) if udf.root_found => {
-            notes.push(note("Image is a UDF image", "src/iso.c:ExtractISO()"));
+    let scan = if options.no_scan {
+        None
+    } else {
+        iso_scan::scan(
+            source,
+            iso_scan::ScanOptions {
+                joliet: !options.disable_joliet,
+                rock_ridge: !options.disable_rock_ridge,
+            },
+        )?
+    };
+    let (mut is_iso, label) = match (&scan, &udf, &iso9660) {
+        (Some(scan), _, _) => {
+            let message = match scan.file_system {
+                Some(iso_scan::ScanFileSystem::Udf) => "Image is a UDF image",
+                _ => "Image is an ISO9660 image",
+            };
+            notes.push(note(message, "src/iso.c:ExtractISO()"));
+            (true, Some(scan.label.clone()).filter(|l| !l.is_empty()))
+        }
+        // Without the scan, the volume descriptors decide.
+        (None, Some(udf), _) if options.no_scan && udf.root_found => {
             (true, udf.logical_volume_id.clone())
         }
-        (_, Some(iso)) => {
-            notes.push(note("Image is an ISO9660 image", "src/iso.c:ExtractISO()"));
-            (true, iso.label.clone())
+        (None, _, Some(iso)) if options.no_scan => {
+            let label = if options.disable_rock_ridge {
+                iso.label.clone()
+            } else {
+                Some(iso.pvd_volume_id.clone())
+            };
+            (true, label.filter(|l| !l.is_empty()))
+        }
+        (None, _, Some(_)) | (None, Some(_), _) => {
+            warnings.push(
+                "the ISO file system could not be scanned; Rufus does not treat it as an ISO"
+                    .to_string(),
+            );
+            (false, None)
         }
         _ => (false, None),
     };
@@ -285,6 +326,14 @@ pub fn inspect_source(
             "src/vhd.c:IsCompressedBootableImage()",
         ));
     }
+    // ExtractISO() sets the projected size of ISOs from their files;
+    // IsBootableImage() only fills it in when it is still 0.
+    if let Some(scan) = &scan
+        && scan.projected_size > 0
+        && projected_size.is_none()
+    {
+        projected_size = Some(scan.projected_size);
+    }
     if projected_size.is_none() && association.is_none() {
         projected_size = Some(image_size);
     }
@@ -311,14 +360,36 @@ pub fn inspect_source(
         _ => None,
     };
 
-    let classification = classify(
-        image_size,
-        is_iso,
-        is_bootable_img,
-        is_windows_img,
-        association,
-        magic,
-    );
+    // ImageScanThread(): an ISOHybrid without an ISO boot method that
+    // Rufus supports is written in DD mode only.
+    if let Some(scan) = &scan
+        && is_iso
+        && is_bootable_img.is_dd_bootable()
+        && (scan.disable_iso || (!scan.is_bios_bootable() && !scan.is_efi_bootable()))
+    {
+        notes.push(note(
+            "DD image mode enforced since this ISOHybrid is not ISO mode compatible",
+            "src/rufus.c:ImageScanThread()",
+        ));
+        is_iso = false;
+    }
+    let no_boot_method = is_iso
+        && !is_bootable_img.is_dd_bootable()
+        && scan
+            .as_ref()
+            .is_some_and(|s| !s.is_bios_bootable() && !s.is_efi_bootable());
+    let classification = if no_boot_method {
+        Classification::Unsupported
+    } else {
+        classify(
+            image_size,
+            is_iso,
+            is_bootable_img,
+            is_windows_img,
+            association,
+            magic,
+        )
+    };
     if classification == Classification::Unsupported {
         notes.push(note(
             "Unsupported image: it is either non-bootable, or it uses a boot or compression method that is not supported",
@@ -340,6 +411,7 @@ pub fn inspect_source(
         gpt,
         iso9660,
         udf,
+        iso_scan: scan,
         vhd: vhd_report,
         vtsi: vtsi_report,
         classification,

@@ -15,6 +15,8 @@ pub mod device;
 pub mod error;
 pub mod hash;
 pub mod image;
+pub mod layout;
+pub mod options;
 pub mod plan;
 pub mod units;
 pub mod upstream;

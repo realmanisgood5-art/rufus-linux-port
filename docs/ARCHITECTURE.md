@@ -36,9 +36,11 @@ audited separately.
 | `units` | Size constants and `size_to_human_readable()` | `src/stdio.c:SizeToHumanReadable()` |
 | `cancel` | Cancellation token shared with worker threads | `ErrorStatus = ERROR_CANCELLED` checks |
 | `hash` | Single-pass MD5/SHA-1/SHA-256/SHA-512 over any reader, with progress and cancellation | `src/hash.c` |
-| `image` | Image inspection: extension and magic detection, MBR and ms-sys identification, GPT, ISO 9660/Joliet/El Torito, UDF, VHD, VHDX, WIM, FFU | `src/vhd.c:IsBootableImage()`, `src/drive.c:AnalyzeMBR()`, `src/iso.c:ExtractISO()` |
+| `image` | Image inspection: extension and magic detection, MBR and ms-sys identification, GPT, ISO 9660/Joliet/El Torito, UDF, VHD, VHDX, WIM, FFU; a bounded read-only ISO 9660/Joliet/Rock Ridge/UDF file-system reader (`isofs`), the ISO scan (`iso_scan`) and a FAT reader for `efi.img` (`fat`) | `src/vhd.c:IsBootableImage()`, `src/drive.c:AnalyzeMBR()`, `src/iso.c:ExtractISO()`, `src/iso.c:check_iso_props()` |
 | `device` | Read-only discovery from sysfs, procfs and the udev database; system-disk detection; the Rufus listing policy; device identity and revalidation | `src/dev.c:GetDevices()`, `src/smart.c:IsHDD()` |
-| `plan` | DD dry-run plans: pass/warning/blocking checks with their upstream rule, stages, a data-loss summary and a fingerprint; `prepare_dd()` runs the scan, inspection and planning for both front ends | `src/rufus.c:BootCheckThread()`, `src/format.c:FormatThread()`, `src/format.c:WriteDrive()` |
+| `options` | The format options Rufus offers and selects (partition scheme, target system, file system, cluster size, label) | `src/rufus.c:SetPartitionSchemeAndTargetSystem()`, `SetAllowedFileSystems()`, `SetFileSystemAndClusterSize()`, `SetFSFromISO()`, `SetProposedLabel()` |
+| `layout` | The partitions a format would create, computed only | `src/drive.c:CreatePartition()`, `src/format.c:FormatThread()` |
+| `plan` | Dry-run plans for DD mode, ISO mode and plain formats: pass/warning/blocking checks with their upstream rule, stages, options, layout, a data-loss summary and a fingerprint; `prepare()` runs the scan, inspection and planning for both front ends | `src/rufus.c:BootCheckThread()`, `src/format.c:FormatThread()`, `src/format.c:WriteDrive()` |
 
 Planned modules: `rules` (M2), `partition` (M2/M4), `writer` (M3),
 `filesystem` and `boot` (M4), `persistence` (M5), `windows` (M6),
@@ -139,13 +141,14 @@ runtime is needed in M1.
 | Command | Purpose |
 |---|---|
 | `ferrufus-cli devices [--all] [-x/--list-usb-hdd] [--list-non-usb-removable] [--list-virtual]` | List candidate devices; `--all` also shows excluded devices with reasons |
-| `ferrufus-cli inspect <IMAGE>` | Identify an image |
+| `ferrufus-cli inspect <IMAGE> [--no-scan] [--no-joliet] [--no-rock-ridge] [--ignore-boot-marker]` | Identify an image and scan an ISO's files |
+| `ferrufus-cli options --device <DEVICE> [--image <IMAGE>] [format choices]` | The format options Rufus would offer and select |
 | `ferrufus-cli hash <FILE> [--sha512] [--algo LIST] [--expect ALGO:HEX]` | Checksums, optionally compared |
-| `ferrufus-cli plan --device <DEVICE> --image <IMAGE> [--no-verify]` | Dry-run DD plan; the device can be a `/dev` path, a kernel name or a stable ID |
+| `ferrufus-cli plan --device <DEVICE> [--image <IMAGE>] [--mode dd\|iso\|format] [--scheme] [--target] [--fs] [--cluster] [--label] [--persistence] [--old-bios-fixes] [--dual-uefi-bios] [--windows-to-go] [--boot] [--no-verify]` | Dry-run plan; the device can be a `/dev` path, a kernel name or a stable ID |
 
 Every command accepts `--json`. JSON documents carry a `schema` field
-(`ferrufus.devices/v1`, `ferrufus.image-report/v1`, `ferrufus.hash/v1`,
-`ferrufus.plan/v1`); fields are only added within a schema version.
+(`ferrufus.devices/v1`, `ferrufus.image-report/v2`, `ferrufus.hash/v1`,
+`ferrufus.options/v1`, `ferrufus.plan/v2`); fields are only added within a schema version.
 
 | Exit code | Meaning |
 |---|---|
