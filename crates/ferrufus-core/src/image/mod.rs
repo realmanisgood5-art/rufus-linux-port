@@ -16,6 +16,7 @@ pub mod compression;
 pub mod gpt;
 pub mod io;
 pub mod iso9660;
+pub mod isofs;
 pub mod mbr;
 pub mod ms_sys;
 mod ms_sys_tables;

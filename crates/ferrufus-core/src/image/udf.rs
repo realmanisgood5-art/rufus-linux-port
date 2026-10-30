@@ -44,6 +44,9 @@ pub struct UdfReport {
     pub logical_volume_id: Option<String>,
     /// Start of the partition, in blocks.
     pub partition_start: u32,
+    /// Block of the root file entry, relative to the partition.
+    #[serde(skip)]
+    pub root_icb: u32,
 }
 
 /// Looks for a UDF volume. Returns `None` when `udf_open()` would fail (no
@@ -135,6 +138,7 @@ pub fn parse(source: &dyn ByteSource) -> Result<Option<UdfReport>> {
         root_found: true,
         logical_volume_id,
         partition_start,
+        root_icb,
     }))
 }
 
@@ -143,6 +147,7 @@ fn no_root(partition_start: u32) -> Option<UdfReport> {
         root_found: false,
         logical_volume_id: None,
         partition_start,
+        root_icb: 0,
     })
 }
 
