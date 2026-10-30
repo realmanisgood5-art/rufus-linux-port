@@ -56,6 +56,24 @@ fn ucs2be(text: &str, len: usize) -> Vec<u8> {
     field
 }
 
+/// Block of the root directory of [`IsoBuilder`] images.
+const ROOT_DIR: usize = 20;
+
+/// A 34-byte directory record for the root directory (`.`).
+fn root_record() -> [u8; 34] {
+    let mut rec = [0u8; 34];
+    rec[0] = 34;
+    let lba = u32::try_from(ROOT_DIR).unwrap();
+    rec[2..6].copy_from_slice(&lba.to_le_bytes());
+    rec[6..10].copy_from_slice(&lba.to_be_bytes());
+    rec[10..14].copy_from_slice(&2048u32.to_le_bytes());
+    rec[14..18].copy_from_slice(&2048u32.to_be_bytes());
+    rec[25] = 2;
+    rec[28..32].copy_from_slice(&[1, 0, 0, 1]);
+    rec[32] = 1;
+    rec
+}
+
 /// An El Torito boot entry: platform id (0 = BIOS, 0xEF = UEFI), image LSN
 /// and size in 512-byte sectors.
 #[derive(Debug, Clone, Copy)]
@@ -130,7 +148,14 @@ impl IsoBuilder {
             pvd[84..88].copy_from_slice(&blocks.to_be_bytes());
             pvd[128..130].copy_from_slice(&2048u16.to_le_bytes());
             pvd[130..132].copy_from_slice(&2048u16.to_be_bytes());
+            pvd[156..190].copy_from_slice(&root_record());
         }
+        // An empty root directory ("." and "..") at block 20.
+        let root = &mut image[ROOT_DIR * BLOCK..(ROOT_DIR + 1) * BLOCK];
+        let mut dot = root_record();
+        root[..34].copy_from_slice(&dot);
+        dot[33] = 1;
+        root[34..68].copy_from_slice(&dot);
         let mut next = 17;
         if !self.boot.is_empty() {
             let catalog_sector = 30usize;
@@ -171,6 +196,7 @@ impl IsoBuilder {
             svd[6] = 1;
             svd[40..72].copy_from_slice(&ucs2be(volume_id, 32));
             svd[88..91].copy_from_slice(b"%/E");
+            svd[156..190].copy_from_slice(&root_record());
         }
         let terminator = &mut image[next * BLOCK..(next + 1) * BLOCK];
         terminator[0] = 255;
@@ -344,4 +370,83 @@ pub fn write_file(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, bytes).unwrap();
     path
+}
+
+/// A 1.44 MB FAT12 image holding `/EFI/BOOT/<files>`, like the `efi.img`
+/// of Linux ISOs. Names are 11-byte 8.3 names (`b"BOOTX64 EFI"`).
+pub fn efi_fat_image(files: &[(&[u8; 11], &[u8])]) -> Vec<u8> {
+    const SECTORS: usize = 2880;
+    let mut image = vec![0u8; SECTORS * 512];
+    // BIOS parameter block.
+    image[0..3].copy_from_slice(&[0xeb, 0x3c, 0x90]);
+    image[3..11].copy_from_slice(b"MSDOS5.0");
+    image[11..13].copy_from_slice(&512u16.to_le_bytes());
+    image[13] = 1; // sectors per cluster
+    image[14..16].copy_from_slice(&1u16.to_le_bytes()); // reserved
+    image[16] = 2; // FATs
+    image[17..19].copy_from_slice(&224u16.to_le_bytes()); // root entries
+    image[19..21].copy_from_slice(&(SECTORS as u16).to_le_bytes());
+    image[21] = 0xf0;
+    image[22..24].copy_from_slice(&9u16.to_le_bytes()); // sectors per FAT
+    image[510] = 0x55;
+    image[511] = 0xaa;
+    let fat_start = 512;
+    let root = (1 + 2 * 9) * 512;
+    let data = root + 14 * 512;
+    let cluster_offset = |cluster: usize| data + (cluster - 2) * 512;
+    let mut fat = vec![0u8; 9 * 512];
+    let mut set = |cluster: usize, value: u16| {
+        let at = cluster + cluster / 2;
+        let (lo, hi) = (fat[at], fat[at + 1]);
+        let word = u16::from_le_bytes([lo, hi]);
+        let word = if cluster.is_multiple_of(2) {
+            (word & 0xf000) | value
+        } else {
+            (word & 0x000f) | (value << 4)
+        };
+        fat[at..at + 2].copy_from_slice(&word.to_le_bytes());
+    };
+    set(0, 0xff0);
+    set(1, 0xfff);
+    let entry = |name: &[u8; 11], attribute: u8, cluster: usize, size: u32| {
+        let mut e = [0u8; 32];
+        e[..11].copy_from_slice(name);
+        e[11] = attribute;
+        e[26..28].copy_from_slice(&(cluster as u16).to_le_bytes());
+        e[28..32].copy_from_slice(&size.to_le_bytes());
+        e
+    };
+    // /EFI at cluster 2, /EFI/BOOT at cluster 3, files from cluster 4.
+    image[root..root + 32].copy_from_slice(&entry(b"EFI        ", 0x10, 2, 0));
+    set(2, 0xfff);
+    set(3, 0xfff);
+    let efi = cluster_offset(2);
+    image[efi..efi + 32].copy_from_slice(&entry(b".          ", 0x10, 2, 0));
+    image[efi + 32..efi + 64].copy_from_slice(&entry(b"..         ", 0x10, 0, 0));
+    image[efi + 64..efi + 96].copy_from_slice(&entry(b"BOOT       ", 0x10, 3, 0));
+    let boot = cluster_offset(3);
+    image[boot..boot + 32].copy_from_slice(&entry(b".          ", 0x10, 3, 0));
+    image[boot + 32..boot + 64].copy_from_slice(&entry(b"..         ", 0x10, 2, 0));
+    let mut next = 4;
+    for (index, (name, contents)) in files.iter().enumerate() {
+        let clusters = contents.len().div_ceil(512).max(1);
+        let at = boot + 64 + index * 32;
+        image[at..at + 32].copy_from_slice(&entry(name, 0x20, next, contents.len() as u32));
+        for c in 0..clusters {
+            set(
+                next + c,
+                if c + 1 == clusters {
+                    0xfff
+                } else {
+                    (next + c + 1) as u16
+                },
+            );
+        }
+        let offset = cluster_offset(next);
+        image[offset..offset + contents.len()].copy_from_slice(contents);
+        next += clusters;
+    }
+    image[fat_start..fat_start + fat.len()].copy_from_slice(&fat);
+    image[fat_start + fat.len()..fat_start + 2 * fat.len()].copy_from_slice(&fat);
+    image
 }

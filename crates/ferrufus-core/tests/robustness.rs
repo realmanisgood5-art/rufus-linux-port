@@ -26,7 +26,10 @@ fn inspect_all_ways(data: &[u8]) {
     let data = data.to_vec();
     for name in NAMES {
         for ignore_boot_marker in [false, true] {
-            let options = InspectOptions { ignore_boot_marker };
+            let options = InspectOptions {
+                ignore_boot_marker,
+                ..InspectOptions::default()
+            };
             inspect_source(name, &data, &options).unwrap();
         }
     }

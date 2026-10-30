@@ -11,6 +11,7 @@ use ferrufus_core::image::ms_sys::{MbrKind, reference_sector};
 use ferrufus_core::image::{ImageReport, InspectOptions, inspect_source};
 use ferrufus_core::plan::{CheckStatus, Plan, PlanOptions, plan_dd};
 use ferrufus_testkit::images::{self, IsoBuilder};
+use ferrufus_testkit::isofs::{IsoFs, Node};
 use ferrufus_testkit::system::{Bus, Disk, FakeSystem, Partition};
 use proptest::prelude::*;
 use std::path::Path;
@@ -296,7 +297,18 @@ fn hidden_devices_are_refused() {
 fn image_types_follow_the_upstream_rules() {
     let setup = Setup::new(SMALL * 4, |d| d);
     let plain_iso = IsoBuilder::new("PLAIN").blocks(64).build();
-    let hybrid_iso = IsoBuilder::new("HYBRID")
+    // An ISOHybrid with an ISO boot method (Syslinux), and one without,
+    // which Rufus only writes in DD mode.
+    let mut hybrid_iso = IsoFs::new(
+        "HYBRID",
+        vec![
+            Node::file("isolinux.cfg", b"x"),
+            Node::file("isolinux.bin", &[0; 4096]),
+        ],
+    )
+    .build();
+    hybrid_iso[..512].copy_from_slice(&reference_sector(MbrKind::Isolinux));
+    let dd_only_iso = IsoBuilder::new("DDONLY")
         .hybrid(reference_sector(MbrKind::Isolinux))
         .blocks(64)
         .build();
@@ -312,6 +324,8 @@ fn image_types_follow_the_upstream_rules() {
     let hybrid = plan("/home/user/hybrid.iso", &hybrid_iso);
     assert!(!hybrid.blocked, "{:#?}", hybrid.checks);
     assert_eq!(status(&hybrid, "image-supported"), Some(CheckStatus::Warn));
+    let dd_only = plan("/home/user/dd-only.iso", &dd_only_iso);
+    assert_eq!(status(&dd_only, "image-supported"), Some(CheckStatus::Pass));
     assert_eq!(
         failures(&plan("/home/user/blank.img", &[0u8; 4096])),
         ["image-supported"]

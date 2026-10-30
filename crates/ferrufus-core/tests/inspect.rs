@@ -12,6 +12,7 @@ use ferrufus_core::image::{
     Bootability, Classification, ImageReport, InspectOptions, inspect, inspect_source,
 };
 use ferrufus_testkit::images::{self, BootEntry, GptPartition, IsoBuilder};
+use ferrufus_testkit::isofs::{IsoFs, Node};
 
 fn check(name: &str, data: &[u8]) -> ImageReport {
     inspect_source(name, &data.to_vec(), &InspectOptions::default()).unwrap()
@@ -52,6 +53,7 @@ fn raw_image_without_boot_marker() {
         &image,
         &InspectOptions {
             ignore_boot_marker: true,
+            ..InspectOptions::default()
         },
     )
     .unwrap();
@@ -61,38 +63,106 @@ fn raw_image_without_boot_marker() {
 }
 
 #[test]
-fn plain_iso() {
-    let image = IsoBuilder::new("WIN_INSTALL").build();
-    let report = check("/images/plain.iso", &image);
+fn windows_iso_without_hybrid_mbr() {
+    let image = IsoFs::new(
+        "WIN_INSTALL",
+        vec![
+            Node::file("bootmgr", b"bm"),
+            Node::file("bootmgr.efi", b"bmefi"),
+            Node::dir(
+                "efi",
+                vec![Node::dir(
+                    "boot",
+                    vec![Node::file("bootx64.efi", &[0x4d; 4096])],
+                )],
+            ),
+            Node::dir("sources", vec![Node::file("install.wim", b"MSWIM\0\0\0")]),
+        ],
+    )
+    .build();
+    let report = check("/images/windows.iso", &image);
     assert_eq!(report.classification, Classification::Iso);
     assert!(report.is_iso);
     assert_eq!(report.is_bootable_img, Bootability::NotBootable);
     assert_eq!(report.label.as_deref(), Some("WIN_INSTALL"));
     assert!(has_note(&report, "ISO9660"));
+    let scan = report.iso_scan.as_ref().unwrap();
+    assert!(scan.has_bootmgr && scan.has_bootmgr_efi);
+    // bootmgr.efi is bit 0, bootx64.efi is bit 1 + ARCH_X86_64.
+    assert_eq!(scan.has_efi, 1 | (2 << 2));
+    assert_eq!(scan.wininst_paths, ["/sources/install.wim"]);
+}
+
+#[test]
+fn iso_without_boot_files_is_unsupported() {
+    // ImageScanThread(): no boot method Rufus supports.
+    let report = check("/images/empty.iso", &IsoBuilder::new("EMPTY").build());
+    assert!(report.is_iso);
+    assert_eq!(report.classification, Classification::Unsupported);
+    // An ISOHybrid without an ISO boot method is written in DD mode.
+    let hybrid = IsoBuilder::new("HYBRID")
+        .hybrid(reference_sector(MbrKind::Isolinux))
+        .build();
+    let report = check("/images/hybrid.iso", &hybrid);
+    assert!(!report.is_iso);
+    assert_eq!(report.classification, Classification::DiskImage);
+    assert!(has_note(&report, "DD image mode enforced"));
+}
+
+fn arch_like() -> Vec<u8> {
+    let mut isolinux = vec![0u8; 4096];
+    let version = b"ISOLINUX 6.04 6.04-pre1 ";
+    isolinux[1000..1000 + version.len()].copy_from_slice(version);
+    let mut fs = IsoFs::new(
+        "ARCH_202610",
+        vec![
+            Node::dir(
+                "boot",
+                vec![Node::dir(
+                    "syslinux",
+                    vec![
+                        Node::file("isolinux.bin", &isolinux),
+                        Node::file("isolinux.cfg", b"DEFAULT arch\n"),
+                        Node::file("ldlinux.c32", b"c32"),
+                    ],
+                )],
+            ),
+            Node::dir(
+                "EFI",
+                vec![Node::dir(
+                    "BOOT",
+                    vec![Node::file("BOOTx64.EFI", &[0x4d; 4096])],
+                )],
+            ),
+        ],
+    );
+    fs.rock_ridge = true;
+    fs.joliet = Some("Arch Linux".into());
+    fs.boot = vec![
+        BootEntry {
+            platform: 0,
+            lsn: 40,
+            sectors: 4,
+        },
+        BootEntry {
+            platform: 0xef,
+            lsn: 41,
+            sectors: 8,
+        },
+    ];
+    let mut image = fs.build();
+    image[..512].copy_from_slice(&reference_sector(MbrKind::Isolinux));
+    image
 }
 
 #[test]
 fn iso_hybrid_with_bios_and_uefi_boot() {
-    let image = IsoBuilder::new("ARCH_202610")
-        .joliet("Arch Linux")
-        .el_torito(&[
-            BootEntry {
-                platform: 0,
-                lsn: 40,
-                sectors: 4,
-            },
-            BootEntry {
-                platform: 0xef,
-                lsn: 41,
-                sectors: 8,
-            },
-        ])
-        .hybrid(reference_sector(MbrKind::Isolinux))
-        .build();
-    let report = check("/images/archlinux.iso", &image);
+    let report = check("/images/archlinux.iso", &arch_like());
     assert_eq!(report.classification, Classification::IsoHybrid);
     assert_eq!(report.is_bootable_img, Bootability::Bootable);
-    assert_eq!(report.label.as_deref(), Some("Arch Linux"));
+    // The scan disables Joliet when Rock Ridge is enabled, so the label is
+    // the PVD identifier, as in Rufus.
+    assert_eq!(report.label.as_deref(), Some("ARCH_202610"));
     assert_eq!(
         report.mbr.as_ref().unwrap().identification,
         MbrIdentification::Known(MbrKind::Isolinux)
@@ -100,6 +170,28 @@ fn iso_hybrid_with_bios_and_uefi_boot() {
     let el_torito = report.iso9660.as_ref().unwrap().el_torito.as_ref().unwrap();
     assert!(el_torito.has_platform(Platform::X86));
     assert!(el_torito.has_platform(Platform::Efi));
+    let scan = report.iso_scan.as_ref().unwrap();
+    assert_eq!(
+        scan.cfg_path.as_deref(),
+        Some("/boot/syslinux/isolinux.cfg")
+    );
+    assert_eq!(scan.sl_version, 0x0604);
+    assert_eq!(scan.sl_version_str, "6.04");
+    assert_eq!(scan.sl_version_ext, "/pre1");
+    assert!(!scan.sl_version_embedded);
+    assert_eq!(scan.has_efi, 2 << 2);
+    assert!(scan.is_bios_bootable() && scan.is_efi_bootable());
+}
+
+#[test]
+fn joliet_label_needs_rock_ridge_disabled() {
+    // Alt-K: without Rock Ridge, Joliet is used and its label preferred.
+    let options = InspectOptions {
+        disable_rock_ridge: true,
+        ..InspectOptions::default()
+    };
+    let report = inspect_source("/images/archlinux.iso", &arch_like(), &options).unwrap();
+    assert_eq!(report.label.as_deref(), Some("Arch Linux"));
 }
 
 #[test]

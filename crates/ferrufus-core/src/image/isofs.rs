@@ -591,6 +591,14 @@ impl<'a> Iso<'a> {
         Ok(Some(current))
     }
 
+    /// Byte offset of an entry's data in the image.
+    pub fn data_offset(&self, entry: &Entry) -> Option<u64> {
+        match entry.location {
+            Location::Iso { lsn } => u64::from(lsn).checked_mul(BLOCK),
+            _ => None,
+        }
+    }
+
     /// Reads a file the way `ReadISOFileToBuffer()` does: its blocks are
     /// read as one contiguous run. `None` when it cannot be read.
     pub fn read(&self, entry: &Entry, max: u64) -> Result<Option<Vec<u8>>> {
