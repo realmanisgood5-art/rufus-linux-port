@@ -1,6 +1,7 @@
 //! Test fixtures for Ferrufus.
 //!
 //! - [`images`]: synthetic disk images built in memory.
+//! - [`system`]: fake sysfs, procfs, `/dev` and udev trees.
 //!
 //! This crate is only used by tests. It deliberately does not depend on
 //! `ferrufus-core`, so tests exercise the real public API. Fixture code
@@ -16,3 +17,4 @@
 )]
 
 pub mod images;
+pub mod system;

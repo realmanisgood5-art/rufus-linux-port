@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 pub mod cancel;
+pub mod device;
 pub mod error;
 pub mod hash;
 pub mod image;
