@@ -1,0 +1,66 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/ferrufus-core",
+    "crates/ferrufus-cli",
+    "crates/ferrufus-gui",
+    "crates/ferrufus-testkit",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/realmanisgood5-art/rufus-linux-port"
+authors = ["Ferrufus contributors"]
+publish = false
+
+[workspace.dependencies]
+ferrufus-core = { path = "crates/ferrufus-core" }
+ferrufus-testkit = { path = "crates/ferrufus-testkit" }
+
+clap = { version = "4.6.7", features = ["derive"] }
+crc32fast = "1.5.3"
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
+egui_kittest = "0.37.0"
+md-5 = "0.11.0"
+proptest = "1.12.0"
+rfd = "0.17.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha1 = "0.11.0"
+sha2 = "0.11.1"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+# Listed directly only to enable run-time loading of the Wayland libraries.
+# Client-side decorations are drawn without title text, which avoids an
+# unmaintained font parser (RUSTSEC-2026-0192, ttf-parser).
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "wayland", "wayland-csd-adwaita-notitle", "wayland-dlopen", "x11"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# Production code must not panic on bad input or failed I/O.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+# Integer conversions must be explicit and checked.
+cast_possible_truncation = "deny"
+cast_possible_wrap = "deny"
+cast_sign_loss = "deny"
+
+[profile.release]
+# A disk tool should stop on arithmetic overflow rather than wrap silently.
+overflow-checks = true
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

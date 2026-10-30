@@ -1,0 +1,9 @@
+#!/bin/sh
+# Ferrufus AppImage entry point: `cli` runs ferrufus-cli, anything else the GUI.
+set -eu
+HERE="$(dirname "$(readlink -f "$0")")"
+if [ "${1-}" = "cli" ]; then
+    shift
+    exec "$HERE/usr/bin/ferrufus-cli" "$@"
+fi
+exec "$HERE/usr/bin/ferrufus" "$@"

@@ -1,0 +1,5 @@
+[toolchain]
+# Pinned stable release, so local verification and CI use the same compiler.
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

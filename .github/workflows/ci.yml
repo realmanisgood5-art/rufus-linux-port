@@ -1,0 +1,133 @@
+# Checks every pull request and push; on every merge to main, builds the
+# AppImage and publishes it (rolling `continuous` pre-release, plus a
+# `v<version>` release the first time a version is seen).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check (fmt, clippy, tests, policy, docs)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests (never touch real devices)
+        run: cargo test --workspace --locked
+      - name: Source policy (no unsafe, no C, no writes in M1)
+        run: cargo run -p xtask --locked -- policy
+      - name: Documentation
+        run: cargo doc --workspace --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Release script tests (fake gh)
+        run: packaging/tests/release-test.sh
+
+  deny:
+    name: Dependencies (licenses, advisories, sources, bans)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-deny@0.20.2
+      - run: cargo deny --locked check
+
+  appimage:
+    name: AppImage
+    needs: [check, deny]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Build release binaries
+        run: cargo build --release --locked -p ferrufus-cli -p ferrufus-gui
+        env:
+          FERRUFUS_GIT_SHA: ${{ github.sha }}
+      - name: Check linked libraries and glibc version
+        run: packaging/check-elf.sh target/release/ferrufus target/release/ferrufus-cli
+      - name: Build the AppImage
+        run: packaging/build-appimage.sh dist
+      - name: Smoke test (read-only)
+        run: |
+          app=dist/Ferrufus-x86_64.AppImage
+          "$app" --appimage-extract-and-run cli --version
+          "$app" --appimage-extract-and-run cli devices --all
+          "$app" --appimage-extract-and-run cli devices --json > /dev/null
+          fixture="$RUNNER_TEMP/fixture.img"
+          head -c 1048576 /dev/zero > "$fixture"
+          printf '\x55\xaa' | dd of="$fixture" bs=1 seek=510 conv=notrunc status=none
+          "$app" --appimage-extract-and-run cli inspect "$fixture"
+          "$app" --appimage-extract-and-run cli hash "$fixture"
+          (cd dist && sha256sum Ferrufus-x86_64.AppImage)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ferrufus-appimage
+          path: dist/Ferrufus-x86_64.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: appimage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ferrufus-appimage
+          path: dist
+      - run: chmod +x dist/Ferrufus-x86_64.AppImage
+      # Build provenance attestations are only available for public
+      # repositories on this plan.
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/Ferrufus-x86_64.AppImage
+      - name: Publish releases
+        run: packaging/release.sh dist
+        env:
+          GH_TOKEN: ${{ github.token }}

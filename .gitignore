@@ -1,0 +1,4 @@
+/target/
+/dist/
+/packaging/appimage/build/
+*.AppImage

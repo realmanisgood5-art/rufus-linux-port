@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Ferrufus
+GenericName=Bootable USB Creator
+Comment=Unofficial Linux port of Rufus (read-only preview), not affiliated with or endorsed by the Rufus project
+Exec=ferrufus %f
+Icon=ferrufus
+Terminal=false
+Categories=Utility;System;
+Keywords=USB;ISO;bootable;Rufus;
+MimeType=application/x-iso9660-image;application/x-raw-disk-image;
+StartupWMClass=ferrufus
