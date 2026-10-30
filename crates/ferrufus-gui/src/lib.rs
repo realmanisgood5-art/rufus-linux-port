@@ -15,7 +15,10 @@ use ferrufus_core::device::sysfs::SysRoot;
 use ferrufus_core::device::{DeviceEntry, DeviceScan, ScanOptions, scan};
 use ferrufus_core::hash::{HashAlgorithm, HashReport, hash_file};
 use ferrufus_core::image::{ImageReport, InspectOptions, inspect};
-use ferrufus_core::plan::{CheckStatus, PlanContext, PlanOptions, prepare_dd};
+use ferrufus_core::options::{Choices, DeviceInput, FormatOptions, format_options};
+use ferrufus_core::plan::{
+    CheckStatus, PlanContext, PlanOptions, PrepareRequest, WriteMode, prepare,
+};
 use ferrufus_core::units::{SizeUnits, size_to_human_readable};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -74,6 +77,10 @@ pub struct FerrufusApp {
     image: Option<Result<ImageReport, String>>,
     hashes: Option<Result<HashReport, String>>,
     plan: Option<Result<PlanContext, String>>,
+    /// Format choices the user made.
+    choices: Choices,
+    /// The write mode the user picked (automatic otherwise).
+    mode: Option<WriteMode>,
     log: Vec<String>,
     busy: usize,
     last_scan: Option<Instant>,
@@ -100,6 +107,8 @@ impl FerrufusApp {
             image: None,
             hashes: None,
             plan: None,
+            choices: Choices::default(),
+            mode: None,
             log: vec!["Ferrufus started (read-only preview).".to_string()],
             busy: 0,
             last_scan: None,
@@ -185,6 +194,10 @@ impl FerrufusApp {
         self.image = None;
         self.hashes = None;
         self.plan = None;
+        // A new image gets a new proposed label and default mode (Rufus
+        // resets user_changed_label).
+        self.choices.label = None;
+        self.mode = None;
         self.spawn(
             move || {
                 Message::Image(Box::new(
@@ -287,6 +300,8 @@ impl FerrufusApp {
             self.device_section(ui);
             ui.separator();
             self.image_section(ui);
+            ui.separator();
+            self.format_section(ui);
             ui.separator();
             self.plan_section(ui);
             ui.separator();
@@ -456,6 +471,140 @@ impl FerrufusApp {
         }
     }
 
+    /// The write modes available for the selected image (the first is the
+    /// default: ISO mode for ISOs, as Rufus recommends).
+    fn write_modes(&self) -> Vec<WriteMode> {
+        match &self.image {
+            Some(Ok(report)) => {
+                let mut modes = Vec::new();
+                if report.is_iso {
+                    modes.push(WriteMode::Iso);
+                }
+                if report.is_bootable_img.is_dd_bootable() {
+                    modes.push(WriteMode::Dd);
+                }
+                modes
+            }
+            _ => vec![WriteMode::Format],
+        }
+    }
+
+    /// The options Rufus would offer for the selected device and image.
+    pub fn format_options(&self) -> Option<FormatOptions> {
+        let device = self.selected_device()?;
+        let image = match &self.image {
+            Some(Ok(report)) => Some(report),
+            _ => None,
+        };
+        Some(format_options(
+            &DeviceInput::of(device),
+            image,
+            &self.choices,
+        ))
+    }
+
+    fn format_section(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Format Options");
+        let Some(options) = self.format_options() else {
+            ui.label("Select a device to see the format options.");
+            return;
+        };
+        let mut changed = false;
+        egui::ComboBox::new("partition-scheme", "Partition scheme")
+            .selected_text(options.partition_scheme.map_or("", |p| p.label()))
+            .show_ui(ui, |ui| {
+                for scheme in &options.partition_schemes {
+                    if ui
+                        .selectable_label(options.partition_scheme == Some(*scheme), scheme.label())
+                        .clicked()
+                    {
+                        self.choices.partition_scheme = Some(*scheme);
+                        changed = true;
+                    }
+                }
+            });
+        egui::ComboBox::new("target-system", "Target system")
+            .selected_text(options.target_system.map_or("", |t| t.label()))
+            .show_ui(ui, |ui| {
+                for target in &options.target_systems {
+                    if ui
+                        .selectable_label(options.target_system == Some(*target), target.label())
+                        .clicked()
+                    {
+                        self.choices.target_system = Some(*target);
+                        changed = true;
+                    }
+                }
+            });
+        let fs_label = options
+            .file_system
+            .and_then(|fs| options.file_systems.iter().find(|e| e.file_system == fs))
+            .map_or(String::new(), |e| e.label.clone());
+        egui::ComboBox::new("file-system", "File system")
+            .selected_text(fs_label)
+            .show_ui(ui, |ui| {
+                for entry in &options.file_systems {
+                    if ui
+                        .selectable_label(
+                            options.file_system == Some(entry.file_system),
+                            &entry.label,
+                        )
+                        .clicked()
+                    {
+                        self.choices.file_system = Some(entry.file_system);
+                        self.choices.cluster_size = None;
+                        changed = true;
+                    }
+                }
+            });
+        let cluster_text = |size: u32| {
+            if size == 0 {
+                "Default".to_string()
+            } else {
+                format!("{} bytes", size)
+            }
+        };
+        if let Some(entry) = options
+            .file_system
+            .and_then(|fs| options.file_systems.iter().find(|e| e.file_system == fs))
+        {
+            egui::ComboBox::new("cluster-size", "Cluster size")
+                .selected_text(options.cluster_size.map_or(String::new(), cluster_text))
+                .show_ui(ui, |ui| {
+                    for size in &entry.cluster_sizes {
+                        if ui
+                            .selectable_label(
+                                options.cluster_size == Some(*size),
+                                cluster_text(*size),
+                            )
+                            .clicked()
+                        {
+                            self.choices.cluster_size = Some(*size);
+                            changed = true;
+                        }
+                    }
+                });
+        }
+        ui.horizontal(|ui| {
+            let label = ui.label("Volume label");
+            let mut text = options.label.clone();
+            if ui
+                .text_edit_singleline(&mut text)
+                .labelled_by(label.id)
+                .changed()
+            {
+                self.choices.label = Some(text);
+                changed = true;
+            }
+        });
+        for note in &options.notes {
+            ui.label(RichText::new(&note.message).italics());
+        }
+        if changed {
+            self.plan = None;
+        }
+    }
+
     fn plan_section(&mut self, ui: &mut egui::Ui) {
         ui.heading("Dry run");
         let device = self.selected_device().map(|d| d.facts.name.clone());
@@ -463,34 +612,79 @@ impl FerrufusApp {
             Some(Ok(report)) => Some(PathBuf::from(&report.path)),
             _ => None,
         };
-        let ready = device.is_some() && image.is_some();
+        let modes = self.write_modes();
+        let mode = self
+            .mode
+            .filter(|m| modes.contains(m))
+            .or_else(|| modes.first().copied());
+        if modes.len() > 1 {
+            let label = |m: WriteMode| match m {
+                WriteMode::Iso => "ISO image mode",
+                WriteMode::Dd => "DD image mode",
+                WriteMode::Format => "Format only",
+            };
+            egui::ComboBox::new("write-mode", "Write mode")
+                .selected_text(mode.map_or("", label))
+                .show_ui(ui, |ui| {
+                    for m in &modes {
+                        if ui.selectable_label(mode == Some(*m), label(*m)).clicked() {
+                            self.mode = Some(*m);
+                            self.plan = None;
+                        }
+                    }
+                });
+        }
+        let ready = device.is_some() && mode.is_some();
         if ui
             .add_enabled(ready, egui::Button::new("Review plan (dry run)"))
             .clicked()
-            && let (Some(device), Some(image)) = (device, image)
+            && let (Some(device), Some(mode)) = (device, mode)
         {
             let root = self.root.clone();
             let mut options = ScanOptions::for_this_process(self.listing.clone());
             if self.options.sysroot.is_some() {
                 options.program_paths.clear();
             }
+            let request = PrepareRequest {
+                image: if mode == WriteMode::Format {
+                    None
+                } else {
+                    image
+                },
+                choices: self.choices.clone(),
+                ..PrepareRequest::default()
+            };
             self.spawn(
                 move || {
                     Message::Plan(Box::new(
-                        prepare_dd(&root, &options, &device, &image, PlanOptions::default())
-                            .map_err(|e| e.to_string()),
+                        prepare(
+                            &root,
+                            &options,
+                            &device,
+                            mode,
+                            &request,
+                            PlanOptions::default(),
+                        )
+                        .map_err(|e| e.to_string()),
                     ))
                 },
                 Some(ui.ctx()),
             );
         }
         if !ready {
-            ui.label("Select a device and an image to review what writing would do.");
+            ui.label("Select a device to review what writing or formatting would do.");
         }
         match &self.plan {
             Some(Ok(context)) => {
                 let plan = &context.plan;
                 ui.colored_label(Color32::RED, &plan.data_loss.summary);
+                for part in &plan.layout {
+                    ui.label(format!(
+                        "New partition: {} ({})",
+                        part.name,
+                        size_to_human_readable(part.size, SizeUnits::Fake)
+                    ));
+                }
                 for check in &plan.checks {
                     let (mark, color) = match check.status {
                         CheckStatus::Pass => ("ok", Color32::DARK_GREEN),
