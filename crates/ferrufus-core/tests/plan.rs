@@ -372,3 +372,208 @@ proptest! {
         prop_assert!(!plan.executable);
     }
 }
+
+mod iso_and_format {
+    use super::*;
+    use ferrufus_core::options::{Choices, FileSystem, PartitionScheme, TargetSystem};
+    use ferrufus_core::plan::{FormatRequest, plan_format_mode};
+
+    /// 4 GiB: FAT32 needs at least 64 MB in Rufus' cluster tables.
+    const STICK_4G: u64 = 8_388_608;
+
+    fn iso(root: Vec<Node>) -> ImageReport {
+        let mut fs = IsoFs::new("LIVE", root);
+        fs.rock_ridge = true;
+        report("/home/user/live.iso", &fs.build())
+    }
+
+    fn syslinux(version: &str) -> Vec<Node> {
+        let mut bin = vec![0u8; 4096];
+        let text = format!("ISOLINUX {version} ");
+        bin[1000..1000 + text.len()].copy_from_slice(text.as_bytes());
+        vec![
+            Node::file("isolinux.cfg", b"x"),
+            Node::file("isolinux.bin", &bin),
+        ]
+    }
+
+    fn plan_with(setup: &Setup, image: Option<&ImageReport>, choices: Choices) -> Plan {
+        let scan = setup.scan();
+        let location = image.map(|i| setup.locate(&i.path));
+        let request = FormatRequest {
+            image,
+            image_location: location.as_ref(),
+            choices,
+            persistence: 0,
+            old_bios_fixes: false,
+        };
+        plan_format_mode(
+            scan.find("sdb").unwrap(),
+            &scan.system,
+            &request,
+            PlanOptions::default(),
+        )
+    }
+
+    #[test]
+    fn a_syslinux_iso_plans_fat32_with_one_partition() {
+        let setup = Setup::new(STICK_4G, |d| d);
+        let image = iso(syslinux("6.04 6.04-pre1"));
+        let plan = plan_with(&setup, Some(&image), Choices::default());
+        assert_eq!(plan.mode, "iso");
+        assert!(!plan.blocked, "{:#?}", plan.checks);
+        assert!(!plan.executable);
+        let format = plan.format.as_ref().unwrap();
+        assert_eq!(format.file_system, Some(FileSystem::Fat32));
+        assert_eq!(format.partition_scheme, Some(PartitionScheme::Mbr));
+        assert_eq!(format.label, "LIVE");
+        assert_eq!(plan.layout.len(), 1);
+        assert_eq!(plan.layout[0].mbr_type, Some(0x0c));
+        assert!(plan.layout[0].active);
+        // The embedded Syslinux matches: no download.
+        assert_eq!(status(&plan, "syslinux-download"), None);
+        let ids: Vec<_> = plan.steps.iter().map(|s| s.id).collect();
+        assert!(
+            ids.contains(&"extract") && ids.contains(&"write-mbr"),
+            "{ids:?}"
+        );
+        assert!(plan.steps.iter().all(|s| !s.implemented));
+    }
+
+    #[test]
+    fn other_syslinux_versions_need_a_download() {
+        let setup = Setup::new(STICK_4G, |d| d);
+        let image = iso(syslinux("6.03"));
+        let plan = plan_with(&setup, Some(&image), Choices::default());
+        assert_eq!(status(&plan, "syslinux-download"), Some(CheckStatus::Warn));
+    }
+
+    #[test]
+    fn ntfs_with_syslinux_4_is_refused_for_bios() {
+        let setup = Setup::new(STICK_4G, |d| d);
+        let image = iso(syslinux("4.07 2013-07-25"));
+        let choices = Choices {
+            file_system: Some(FileSystem::Ntfs),
+            ..Choices::default()
+        };
+        let plan = plan_with(&setup, Some(&image), choices);
+        assert_eq!(
+            plan.format.as_ref().unwrap().file_system,
+            Some(FileSystem::Ntfs)
+        );
+        assert_eq!(failures(&plan), ["file-system-compat"]);
+    }
+
+    #[test]
+    fn efi_isos_on_ntfs_get_a_uefi_ntfs_partition() {
+        let setup = Setup::new(STICK_4G, |d| d);
+        let image = iso(vec![Node::dir(
+            "EFI",
+            vec![Node::dir(
+                "BOOT",
+                vec![Node::file("BOOTX64.EFI", &[1; 4096])],
+            )],
+        )]);
+        let choices = Choices {
+            file_system: Some(FileSystem::Ntfs),
+            partition_scheme: Some(PartitionScheme::Gpt),
+            ..Choices::default()
+        };
+        let plan = plan_with(&setup, Some(&image), choices);
+        assert_eq!(
+            plan.format.as_ref().unwrap().target_system,
+            Some(TargetSystem::Uefi)
+        );
+        let names: Vec<_> = plan.layout.iter().map(|p| p.name).collect();
+        assert_eq!(names, ["Main Data Partition", "UEFI:NTFS"]);
+        assert!(plan.steps.iter().any(|s| s.id == "uefi-ntfs"));
+    }
+
+    #[test]
+    fn images_without_iso_mode_are_refused() {
+        let setup = Setup::new(STICK_4G, |d| d);
+        let disk = disk_image("/home/user/disk.img", MB);
+        let plan = plan_with(&setup, Some(&disk), Choices::default());
+        assert!(failures(&plan).contains(&"iso-mode"));
+        let proxmox = iso(vec![
+            Node::dir("proxmox", vec![Node::file("x", b"x")]),
+            Node::dir("isolinux", syslinux("6.04")),
+        ]);
+        let plan = plan_with(&setup, Some(&proxmox), Choices::default());
+        assert!(failures(&plan).contains(&"iso-mode"), "{:#?}", plan.checks);
+    }
+
+    #[test]
+    fn plain_format() {
+        let setup = Setup::new(STICK_4G, |d| d);
+        let choices = Choices {
+            label: Some("DATA".into()),
+            ..Choices::default()
+        };
+        let plan = plan_with(&setup, None, choices);
+        assert_eq!(plan.mode, "format");
+        assert!(!plan.blocked, "{:#?}", plan.checks);
+        assert_eq!(plan.image, None);
+        let format = plan.format.as_ref().unwrap();
+        assert_eq!(format.label, "DATA");
+        assert_eq!(plan.layout.len(), 1);
+        assert!(!plan.layout[0].active, "non-bootable");
+        assert!(
+            plan.steps
+                .iter()
+                .all(|s| s.id != "write-mbr" && s.id != "extract")
+        );
+        // Super Floppy Disk: no partitions.
+        let sfd = Choices {
+            partition_scheme: Some(PartitionScheme::Sfd),
+            ..Choices::default()
+        };
+        let plan = plan_with(&setup, None, sfd);
+        assert!(plan.layout.is_empty());
+    }
+
+    #[test]
+    fn warnings_before_every_write() {
+        // Two partitions: Rufus warns before erasing them.
+        let mut setup = Setup::new(STICK_4G, |d| d);
+        let root = std::fs::canonicalize(setup.system.root()).unwrap();
+        let sdb = std::fs::canonicalize(root.join("sys/class/block/sdb")).unwrap();
+        let sdb = sdb
+            .strip_prefix(&root)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        setup.system.add_partition(
+            &sdb,
+            &Partition {
+                name: "sdb2",
+                dev: (8, 18),
+                number: 2,
+                start: 40000,
+                sectors: 1000,
+            },
+        );
+        let plan = plan_with(&setup, None, Choices::default());
+        assert_eq!(
+            status(&plan, "multiple-partitions"),
+            Some(CheckStatus::Warn)
+        );
+        // MBR on a 3 TB device.
+        let big = Setup::new(6_000_000_000, |d| Disk {
+            removable: true,
+            ..d
+        });
+        let choices = Choices {
+            partition_scheme: Some(PartitionScheme::Mbr),
+            ..Choices::default()
+        };
+        let plan = plan_with(&big, None, choices);
+        // Over 2 TB, GPT is forced and MBR is not kept.
+        assert_eq!(
+            plan.format.as_ref().unwrap().partition_scheme,
+            Some(PartitionScheme::Gpt)
+        );
+        assert_eq!(status(&plan, "mbr-2tb"), None);
+    }
+}

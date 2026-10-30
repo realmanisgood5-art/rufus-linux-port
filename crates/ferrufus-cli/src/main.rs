@@ -14,7 +14,13 @@ use ferrufus_core::device::sysfs::SysRoot;
 use ferrufus_core::device::{DeviceEntry, DeviceScan, ScanOptions, scan};
 use ferrufus_core::hash::{ExpectedHash, HashAlgorithm, HashReport, hash_file};
 use ferrufus_core::image::{ImageReport, InspectOptions, inspect};
-use ferrufus_core::plan::{CheckStatus, PlanContext, PlanOptions, prepare_dd};
+use ferrufus_core::options::{
+    BootType, Choices, DeviceInput, FileSystem, FormatOptions, ImageOption, PartitionScheme,
+    TargetSystem, format_options,
+};
+use ferrufus_core::plan::{
+    CheckStatus, PlanContext, PlanOptions, PrepareRequest, WriteMode, prepare,
+};
 use ferrufus_core::units::{SizeUnits, size_to_human_readable};
 use ferrufus_core::{Error, ErrorKind, upstream};
 use serde::Serialize;
@@ -65,6 +71,8 @@ enum Command {
     Inspect {
         /// The image.
         image: PathBuf,
+        #[command(flatten)]
+        inspect: InspectArgs,
     },
     /// Compute checksums of a file (MD5, SHA-1 and SHA-256 by default).
     Hash {
@@ -80,21 +88,210 @@ enum Command {
         #[arg(long, value_parser = parse_expected)]
         expect: Option<ExpectedHash>,
     },
-    /// Plan writing an image to a device (dry run: nothing is written).
+    /// Show the format options Rufus would offer and select.
+    Options {
+        /// The target device. Never chosen automatically.
+        #[arg(long)]
+        device: String,
+        /// The image to boot from (none: non-bootable or `--boot`).
+        #[arg(long)]
+        image: Option<PathBuf>,
+        #[command(flatten)]
+        format: FormatArgs,
+        #[command(flatten)]
+        inspect: InspectArgs,
+        #[command(flatten)]
+        listing: ListingArgs,
+    },
+    /// Plan writing to a device (dry run: nothing is written).
     Plan {
         /// The target: kernel name (sdb), device node (/dev/sdb) or
         /// /dev/disk/by-id name. Never chosen automatically.
         #[arg(long)]
         device: String,
-        /// The image.
+        /// The image (required for `dd` and `iso`).
         #[arg(long)]
-        image: PathBuf,
+        image: Option<PathBuf>,
+        /// How to write: `dd` (default with an image), `iso` (extract the
+        /// files to a new file system), `format` (default without an image).
+        #[arg(long, value_enum)]
+        mode: Option<ModeArg>,
         /// Do not plan a read-back verification.
         #[arg(long)]
         no_verify: bool,
         #[command(flatten)]
+        format: FormatArgs,
+        #[command(flatten)]
+        inspect: InspectArgs,
+        #[command(flatten)]
         listing: ListingArgs,
     },
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum ModeArg {
+    Dd,
+    Iso,
+    Format,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum BootArg {
+    NonBootable,
+    MsDos,
+    Freedos,
+    SyslinuxV4,
+    SyslinuxV6,
+    Reactos,
+    Grub4dos,
+    Grub2,
+    UefiNtfs,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum SchemeArg {
+    Mbr,
+    Gpt,
+    Sfd,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum TargetArg {
+    /// BIOS (or UEFI-CSM).
+    Bios,
+    /// UEFI (non CSM).
+    Uefi,
+    /// BIOS or UEFI.
+    BiosOrUefi,
+}
+
+/// Image analysis switches (Rufus cheat modes).
+#[derive(Debug, Args)]
+struct InspectArgs {
+    /// Skip the ISO file scan.
+    #[arg(long)]
+    no_scan: bool,
+    /// Do not use Joliet (Rufus Alt-J).
+    #[arg(long)]
+    no_joliet: bool,
+    /// Do not use Rock Ridge (Rufus Alt-K).
+    #[arg(long)]
+    no_rock_ridge: bool,
+    /// Treat images without a boot marker as bootable (Rufus Alt-M).
+    #[arg(long)]
+    ignore_boot_marker: bool,
+}
+
+impl InspectArgs {
+    fn options(&self) -> InspectOptions {
+        InspectOptions {
+            ignore_boot_marker: self.ignore_boot_marker,
+            disable_joliet: self.no_joliet,
+            disable_rock_ridge: self.no_rock_ridge,
+            no_scan: self.no_scan,
+        }
+    }
+}
+
+/// Format choices; anything left out gets Rufus' default.
+#[derive(Debug, Args)]
+struct FormatArgs {
+    /// Boot selection when there is no image.
+    #[arg(long, value_enum)]
+    boot: Option<BootArg>,
+    /// Partition scheme.
+    #[arg(long, value_enum)]
+    scheme: Option<SchemeArg>,
+    /// Target system.
+    #[arg(long, value_enum)]
+    target: Option<TargetArg>,
+    /// File system (FAT, FAT32, NTFS, UDF, exFAT, ext2, ext3, ext4).
+    #[arg(long = "fs", value_parser = parse_fs)]
+    file_system: Option<FileSystem>,
+    /// Cluster size in bytes (4096, 32K, ...).
+    #[arg(long, value_parser = parse_size)]
+    cluster: Option<u64>,
+    /// Volume label.
+    #[arg(long)]
+    label: Option<String>,
+    /// Linux persistence partition size (4G, 512M, ...).
+    #[arg(long, value_parser = parse_size)]
+    persistence: Option<u64>,
+    /// Add fixes for old BIOSes (extra partition, alignment).
+    #[arg(long)]
+    old_bios_fixes: bool,
+    /// Allow dual BIOS+UEFI Windows media (Rufus Alt-E).
+    #[arg(long)]
+    dual_uefi_bios: bool,
+    /// Windows To Go instead of a Windows installer.
+    #[arg(long)]
+    windows_to_go: bool,
+    /// Show ext2/ext3/ext4 (Rufus' advanced format options).
+    #[arg(long)]
+    advanced: bool,
+}
+
+impl FormatArgs {
+    fn choices(&self) -> Choices {
+        Choices {
+            boot_type: self.boot.map(|b| match b {
+                BootArg::NonBootable => BootType::NonBootable,
+                BootArg::MsDos => BootType::MsDos,
+                BootArg::Freedos => BootType::FreeDos,
+                BootArg::SyslinuxV4 => BootType::SyslinuxV4,
+                BootArg::SyslinuxV6 => BootType::SyslinuxV6,
+                BootArg::Reactos => BootType::ReactOs,
+                BootArg::Grub4dos => BootType::Grub4Dos,
+                BootArg::Grub2 => BootType::Grub2,
+                BootArg::UefiNtfs => BootType::UefiNtfs,
+            }),
+            image_option: if self.windows_to_go {
+                ImageOption::WindowsToGo
+            } else {
+                ImageOption::Standard
+            },
+            allow_dual_uefi_bios: self.dual_uefi_bios,
+            partition_scheme: self.scheme.map(|s| match s {
+                SchemeArg::Mbr => PartitionScheme::Mbr,
+                SchemeArg::Gpt => PartitionScheme::Gpt,
+                SchemeArg::Sfd => PartitionScheme::Sfd,
+            }),
+            target_system: self.target.map(|t| match t {
+                TargetArg::Bios => TargetSystem::BiosOrCsm,
+                TargetArg::Uefi => TargetSystem::Uefi,
+                TargetArg::BiosOrUefi => TargetSystem::BiosOrUefi,
+            }),
+            file_system: self.file_system,
+            preselected_fs: None,
+            advanced_format: self.advanced,
+            force_large_fat32: false,
+            cluster_size: self.cluster.and_then(|c| u32::try_from(c).ok()),
+            label: self.label.clone(),
+        }
+    }
+}
+
+fn parse_fs(text: &str) -> Result<FileSystem, String> {
+    FileSystem::from_label(text).ok_or_else(|| format!("unknown file system `{text}`"))
+}
+
+/// Sizes: bytes, or a number with K, M, G or T (powers of 1024).
+fn parse_size(text: &str) -> Result<u64, String> {
+    let text = text.trim();
+    let (digits, shift) = match text.chars().last().map(|c| c.to_ascii_uppercase()) {
+        Some('K') => (&text[..text.len() - 1], 10),
+        Some('M') => (&text[..text.len() - 1], 20),
+        Some('G') => (&text[..text.len() - 1], 30),
+        Some('T') => (&text[..text.len() - 1], 40),
+        _ => (text, 0),
+    };
+    let value: u64 = digits
+        .trim()
+        .parse()
+        .map_err(|_| format!("`{text}` is not a size"))?;
+    value
+        .checked_mul(1u64 << shift)
+        .ok_or_else(|| format!("`{text}` is too large"))
 }
 
 #[derive(Debug, Args)]
@@ -228,9 +425,12 @@ fn run(cli: &Cli) -> Result<u8, Failure> {
             })?;
             Ok(exit::OK)
         }
-        Command::Inspect { image } => {
-            let report = inspect(image, &InspectOptions::default()).map_err(image_failure)?;
-            emit(cli, "ferrufus.image-report/v1", &report, || {
+        Command::Inspect {
+            image,
+            inspect: switches,
+        } => {
+            let report = inspect(image, &switches.options()).map_err(image_failure)?;
+            emit(cli, "ferrufus.image-report/v2", &report, || {
                 inspect_text(&report)
             })?;
             Ok(exit::OK)
@@ -269,27 +469,75 @@ fn run(cli: &Cli) -> Result<u8, Failure> {
                 exit::OK
             })
         }
+        Command::Options {
+            device,
+            image,
+            format,
+            inspect: switches,
+            listing,
+        } => {
+            let report = match image {
+                Some(path) => Some(inspect(path, &switches.options()).map_err(image_failure)?),
+                None => None,
+            };
+            let scan = scan(&root, &scan_options(listing))?;
+            let entry = scan.find(device)?;
+            let options =
+                format_options(&DeviceInput::of(entry), report.as_ref(), &format.choices());
+            emit(cli, "ferrufus.options/v1", &options, || {
+                options_text(&options)
+            })?;
+            Ok(exit::OK)
+        }
         Command::Plan {
             device,
             image,
+            mode,
             no_verify,
+            format,
+            inspect: switches,
             listing,
         } => {
-            if !image.is_file() {
+            let mode = match (mode, image) {
+                (Some(ModeArg::Dd), _) | (None, Some(_)) => WriteMode::Dd,
+                (Some(ModeArg::Iso), _) => WriteMode::Iso,
+                (Some(ModeArg::Format), _) | (None, None) => WriteMode::Format,
+            };
+            if let Some(image) = image
+                && !image.is_file()
+            {
                 return Err(image_failure(Error::InvalidInput(format!(
                     "{} is not a regular file",
                     image.display()
                 ))));
             }
-            let context = prepare_dd(
+            if mode != WriteMode::Format && image.is_none() {
+                return Err(Failure {
+                    code: exit::USAGE,
+                    error: Error::InvalidInput("--image is required for this mode".into()),
+                });
+            }
+            let request = PrepareRequest {
+                image: if mode == WriteMode::Format {
+                    None
+                } else {
+                    image.clone()
+                },
+                inspect: switches.options(),
+                choices: format.choices(),
+                persistence: format.persistence.unwrap_or(0),
+                old_bios_fixes: format.old_bios_fixes,
+            };
+            let context = prepare(
                 &root,
                 &scan_options(listing),
                 device,
-                image,
+                mode,
+                &request,
                 PlanOptions { verify: !no_verify },
             )
             .map_err(image_failure)?;
-            emit(cli, "ferrufus.plan/v1", &context, || plan_text(&context))?;
+            emit(cli, "ferrufus.plan/v2", &context, || plan_text(&context))?;
             Ok(if context.plan.blocked {
                 exit::BLOCKED
             } else {
@@ -377,6 +625,55 @@ fn devices_text(scan: &DeviceScan, all: bool) -> String {
     out
 }
 
+fn options_text(options: &FormatOptions) -> String {
+    let mut out = String::new();
+    let mark = |selected: bool| if selected { "*" } else { " " };
+    let _ = writeln!(out, "Boot selection: {:?}", options.boot_type);
+    out.push_str("Partition scheme:\n");
+    for scheme in &options.partition_schemes {
+        let _ = writeln!(
+            out,
+            " {} {}",
+            mark(options.partition_scheme == Some(*scheme)),
+            scheme.label()
+        );
+    }
+    out.push_str("Target system:\n");
+    for target in &options.target_systems {
+        let _ = writeln!(
+            out,
+            " {} {}",
+            mark(options.target_system == Some(*target)),
+            target.label()
+        );
+    }
+    out.push_str("File system:\n");
+    for entry in &options.file_systems {
+        let _ = writeln!(
+            out,
+            " {} {}",
+            mark(options.file_system == Some(entry.file_system)),
+            entry.label
+        );
+    }
+    if let Some(cluster) = options.cluster_size {
+        let _ = writeln!(
+            out,
+            "Cluster size: {}",
+            if cluster == 0 {
+                "default".to_string()
+            } else {
+                format!("{cluster} bytes")
+            }
+        );
+    }
+    let _ = writeln!(out, "Volume label: {}", options.label);
+    for note in &options.notes {
+        let _ = writeln!(out, "note: {} ({})", note.message, note.upstream);
+    }
+    out
+}
+
 fn inspect_text(report: &ImageReport) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "Image:          {}", report.path);
@@ -393,6 +690,44 @@ fn inspect_text(report: &ImageReport) -> String {
     let _ = writeln!(out, "Bootable (DD):  {:?}", report.is_bootable_img);
     if let Some(label) = &report.label {
         let _ = writeln!(out, "Label:          {label}");
+    }
+    if let Some(scan) = &report.iso_scan {
+        let _ = writeln!(out, "ISO scan:");
+        let flag = |set: bool, name: &str| {
+            if set {
+                format!(" {name}")
+            } else {
+                String::new()
+            }
+        };
+        let _ = writeln!(
+            out,
+            "  boot:{}{}{}{}{}{}",
+            flag(scan.is_bios_bootable(), "BIOS"),
+            flag(scan.is_efi_bootable(), "UEFI"),
+            flag(scan.has_windows(), "Windows"),
+            flag(
+                scan.has_syslinux(),
+                &format!("Syslinux-{}{}", scan.sl_version_str, scan.sl_version_ext)
+            ),
+            flag(scan.has_grub2 != 0, &format!("GRUB-{}", scan.grub2_version)),
+            flag(scan.has_reactos(), "ReactOS")
+        );
+        if let Some(cfg) = &scan.cfg_path {
+            let _ = writeln!(out, "  Syslinux configuration: {cfg}");
+        }
+        for entry in &scan.efi_boot_entries {
+            let _ = writeln!(out, "  UEFI: {} ({:?})", entry.path, entry.kind);
+        }
+        if scan.has_4gb_file != 0 {
+            let _ = writeln!(out, "  has files of 4 GB or more (needs NTFS or exFAT)");
+        }
+        if scan.disable_iso {
+            let _ = writeln!(out, "  ISO mode is not supported for this image");
+        }
+        for item in &scan.not_analyzed {
+            let _ = writeln!(out, "  not analyzed: {item}");
+        }
     }
     for note in &report.notes {
         let _ = writeln!(out, "  {} ({})", note.message, note.upstream);
@@ -435,11 +770,20 @@ fn plan_text(context: &PlanContext) -> String {
     let plan = &context.plan;
     let mut out = String::new();
     let _ = writeln!(out, "DRY RUN: nothing will be written.\n");
-    let _ = writeln!(
-        out,
-        "Write {} to {} in DD mode",
-        plan.image, plan.data_loss.display_name
-    );
+    let what = match plan.mode {
+        "dd" => format!(
+            "Write {} to {} in DD mode",
+            plan.image.as_deref().unwrap_or("?"),
+            plan.data_loss.display_name
+        ),
+        "iso" => format!(
+            "Write {} to {} in ISO mode",
+            plan.image.as_deref().unwrap_or("?"),
+            plan.data_loss.display_name
+        ),
+        _ => format!("Format {}", plan.data_loss.display_name),
+    };
+    let _ = writeln!(out, "{what}");
     let _ = writeln!(out, "{}\n", plan.data_loss.summary);
     for partition in &plan.data_loss.partitions {
         let _ = writeln!(
@@ -450,6 +794,33 @@ fn plan_text(context: &PlanContext) -> String {
             partition.fs_type.as_deref().unwrap_or("-"),
             partition.label.as_deref().unwrap_or("")
         );
+    }
+    if let Some(format) = &plan.format {
+        let _ = writeln!(
+            out,
+            "Options: {} / {} / {} / cluster {} / label \"{}\"",
+            format.partition_scheme.map_or("-", PartitionScheme::label),
+            format.target_system.map_or("-", TargetSystem::label),
+            format.file_system.map_or("-", FileSystem::label),
+            format.cluster_size.map_or("-".to_string(), |c| if c == 0 {
+                "default".into()
+            } else {
+                c.to_string()
+            }),
+            format.label
+        );
+    }
+    if !plan.layout.is_empty() {
+        out.push_str("Partitions to create:\n");
+        for part in &plan.layout {
+            let _ = writeln!(
+                out,
+                "  {} at {} ({})",
+                part.name,
+                part.offset,
+                human(part.size)
+            );
+        }
     }
     out.push_str("\nChecks:\n");
     for check in &plan.checks {

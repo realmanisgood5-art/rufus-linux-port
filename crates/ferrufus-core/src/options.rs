@@ -131,6 +131,7 @@ pub enum FileSystem {
     /// UDF.
     Udf,
     /// exFAT.
+    #[serde(rename = "exfat")]
     ExFat,
     /// ReFS.
     Refs,
@@ -223,6 +224,27 @@ pub struct DeviceInput {
     pub volume_label: Option<String>,
 }
 
+impl DeviceInput {
+    /// The input for a scanned device.
+    pub fn of(device: &crate::device::DeviceEntry) -> Self {
+        let facts = &device.facts;
+        Self {
+            size: facts.size_bytes,
+            sector_size: facts.logical_block_size,
+            partition_scheme: match facts.partition_table.as_deref() {
+                Some("gpt") => Some(PartitionScheme::Gpt),
+                Some("dos") => Some(PartitionScheme::Mbr),
+                _ => None,
+            },
+            volume_label: match facts.partitions.as_slice() {
+                [only] => only.fs_label.clone(),
+                [] => facts.fs_label.clone(),
+                _ => None,
+            },
+        }
+    }
+}
+
 /// What the user chose, or what Rufus remembers from earlier choices.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Choices {
@@ -244,6 +266,8 @@ pub struct Choices {
     pub advanced_format: bool,
     /// `force_large_fat32` (Alt-L).
     pub force_large_fat32: bool,
+    /// A cluster size the user picked, in bytes.
+    pub cluster_size: Option<u32>,
     /// A label the user typed (`user_changed_label`).
     pub label: Option<String>,
 }
@@ -528,7 +552,12 @@ pub fn format_options(
     }
     let cluster_size = file_system
         .and_then(|fs| file_systems.iter().find(|e| e.file_system == fs))
-        .map(|e| e.default_cluster_size);
+        .map(|e| {
+            choices
+                .cluster_size
+                .filter(|size| e.cluster_sizes.contains(size))
+                .unwrap_or(e.default_cluster_size)
+        });
 
     // SetProposedLabel()
     let label = match (&choices.label, facts.label) {
