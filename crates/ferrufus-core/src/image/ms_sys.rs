@@ -5,7 +5,7 @@
 //! table (Copyright © 2011-2026 Pete Batard, GPL-3.0-or-later) and from the
 //! matching functions of ms-sys `src/ms-sys/br.c` (Copyright © 2009-2015
 //! Henrik Carlqvist, GPL-2.0-or-later), at the Rufus v4.15 baseline. The boot
-//! code tables in [`super::ms_sys_tables`] are generated from upstream.
+//! code tables in `ms_sys_tables` are generated from upstream.
 
 #![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
@@ -66,7 +66,7 @@ impl MbrKind {
         Self::Zeroed,
     ];
 
-    /// The name Rufus prints ("Image has a <name> Master Boot Record").
+    /// The name Rufus prints (`Image has a <name> Master Boot Record`).
     pub fn name(self) -> &'static str {
         match self {
             Self::Dos => "DOS/NT/95A",

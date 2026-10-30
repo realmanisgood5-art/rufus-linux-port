@@ -95,7 +95,7 @@ impl ScanOptions {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeviceEntry {
     /// The name shown in the device list, as Rufus formats it:
-    /// "<label> (<device>) [<size>]".
+    /// `<label> (<device>) [<size>]`.
     pub display_name: String,
     /// A stable identifier: the `/dev/disk/by-id` name when available.
     pub stable_id: String,

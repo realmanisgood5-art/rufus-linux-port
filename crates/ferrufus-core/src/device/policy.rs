@@ -279,7 +279,7 @@ fn has_card_reader_name(facts: &DeviceFacts) -> bool {
     })
 }
 
-/// The name Windows shows for a USB disk ("<vendor> <product> USB Device"),
+/// The name Windows shows for a USB disk (`<vendor> <product> USB Device`),
 /// which `IsHDD()` matches against; UAS devices end with "UAS Device", as
 /// Rufus renames them.
 pub fn friendly_name(facts: &DeviceFacts) -> Option<String> {

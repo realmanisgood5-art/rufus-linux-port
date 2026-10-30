@@ -605,3 +605,50 @@ fn host_scan_never_offers_the_root_disk() {
         assert!(!scan.system.system_disks.contains_key(&device.facts.name));
     }
 }
+
+#[test]
+fn cards_over_500_gb_need_the_hdd_option() {
+    let mut system = FakeSystem::new();
+    // Upstream's 500 GB is 500 × 1024³ bytes: a "512 GB" card (512 × 10⁹
+    // bytes) is still listed, a 1 TB one is not.
+    system.add_disk(&disk(
+        "mmcblk0",
+        (179, 0),
+        1_953_525_168,
+        false,
+        Bus::Mmc { card_type: "SD" },
+    ));
+    system.add_disk(&disk(
+        "mmcblk1",
+        (179, 8),
+        1_000_000_000,
+        false,
+        Bus::Mmc { card_type: "SD" },
+    ));
+    let hidden = run(&system, ListingOptions::default());
+    assert_eq!(
+        codes(entry(&hidden, "mmcblk0")),
+        [ReasonCode::LargeCardHidden]
+    );
+    assert!(entry(&hidden, "mmcblk1").decision.listed);
+    let shown = run(
+        &system,
+        ListingOptions {
+            list_usb_hdd: true,
+            ..ListingOptions::default()
+        },
+    );
+    assert!(entry(&shown, "mmcblk0").decision.listed);
+}
+
+#[test]
+fn usb_version_and_speed_are_reported() {
+    let mut system = FakeSystem::new();
+    system.add_disk(&Disk::usb_stick("sdb", (8, 16), STICK));
+    let scan = run(&system, ListingOptions::default());
+    let usb = entry(&scan, "sdb").facts.usb().unwrap().clone();
+    assert_eq!(usb.speed_mbps.as_deref(), Some("480"));
+    assert_eq!(usb.version.as_deref(), Some("2.10"));
+    assert_eq!(usb.manufacturer.as_deref(), Some("SanDisk"));
+    assert_eq!(usb.product.as_deref(), Some("Cruzer Blade"));
+}

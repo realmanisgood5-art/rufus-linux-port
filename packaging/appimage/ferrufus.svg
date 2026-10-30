@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ferrufus icon. Original artwork for Ferrufus, GPL-3.0-or-later. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect x="16" y="16" width="224" height="224" rx="48" fill="#2b2f36"/>
+  <!-- Connector -->
+  <rect x="98" y="34" width="60" height="44" rx="6" fill="#c9ced6"/>
+  <rect x="112" y="46" width="12" height="12" fill="#2b2f36"/>
+  <rect x="132" y="46" width="12" height="12" fill="#2b2f36"/>
+  <!-- Body -->
+  <rect x="78" y="74" width="100" height="148" rx="18" fill="#d9622b"/>
+  <!-- Down arrow: an image flowing onto the drive -->
+  <path d="M128 102 v58" stroke="#ffffff" stroke-width="14" stroke-linecap="round"/>
+  <path d="M100 138 l28 30 l28 -30" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="100" y="186" width="56" height="12" rx="6" fill="#ffffff"/>
+</svg>

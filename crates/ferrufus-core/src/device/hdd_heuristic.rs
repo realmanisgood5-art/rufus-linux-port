@@ -5,7 +5,7 @@
 //! Batard, GPL-3.0-or-later; tables based in part on smartmontools,
 //! GPL-2.0-or-later) at the v4.15 baseline. A positive score means "hard
 //! drive or SSD", which Rufus hides unless "List USB Hard Drives" is set.
-//! The tables in [`super::hdd_tables`] are generated from upstream.
+//! The tables in `hdd_tables` are generated from upstream.
 
 #![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
