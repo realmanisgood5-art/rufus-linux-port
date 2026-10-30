@@ -10,16 +10,19 @@
 //!
 //! A plan describes what would happen; this build never executes it.
 
-use crate::device::DeviceEntry;
 use crate::device::identity::DeviceIdentity;
 use crate::device::policy::ReasonCode;
+use crate::device::sysfs::SysRoot;
 use crate::device::system::{Resolution, SystemInfo};
+use crate::device::{DeviceEntry, ScanOptions, mounts, scan};
 use crate::image::compression::MagicCheck;
-use crate::image::{Bootability, Classification, ImageReport};
+use crate::image::{Bootability, Classification, ImageReport, InspectOptions, inspect};
 use crate::units::{MB, SizeUnits, size_to_human_readable};
 use crate::upstream::UpstreamRef;
+use crate::{Error, Result};
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
+use std::path::Path;
 
 /// `DD_BUFFER_SIZE`: the write buffer of a DD write.
 pub const DD_BUFFER_SIZE: u64 = 32 * MB;
@@ -473,8 +476,8 @@ fn steps(device: &DeviceEntry, options: PlanOptions) -> Vec<Step> {
         step(
             "write",
             format!(
-                "write the image in {} blocks, retrying a failed block up to {WRITE_RETRIES} times",
-                human(DD_BUFFER_SIZE)
+                "write the image in {} MiB blocks, retrying a failed block up to {WRITE_RETRIES} times",
+                DD_BUFFER_SIZE / MB
             ),
             UpstreamRef("src/format.c:WriteDrive()"),
         ),
@@ -541,4 +544,40 @@ fn fingerprint(plan: &Plan) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+/// A plan together with what it was made from.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PlanContext {
+    /// The plan.
+    pub plan: Plan,
+    /// The image analysis.
+    pub image: ImageReport,
+    /// The disks holding the image file.
+    pub image_disks: Vec<String>,
+}
+
+/// Scans the devices under `root`, inspects the image and plans writing it
+/// to the device `device_query` (see `DeviceScan::find`). Read-only.
+pub fn prepare_dd(
+    root: &SysRoot,
+    scan_options: &ScanOptions,
+    device_query: &str,
+    image_path: &Path,
+    options: PlanOptions,
+) -> Result<PlanContext> {
+    let image_path = std::fs::canonicalize(image_path)
+        .map_err(|e| Error::io(format!("cannot find {}", image_path.display()), e))?;
+    let image = inspect(&image_path, &InspectOptions::default())?;
+    let scan = scan(root, scan_options)?;
+    let device = scan.find(device_query)?;
+    let mount_list =
+        mounts::parse_mountinfo(&root.read("/proc/self/mountinfo").unwrap_or_default());
+    let location = SystemInfo::disks_of_path(root, &mount_list, &image_path);
+    let plan = plan_dd(device, &scan.system, &image, &location, options);
+    Ok(PlanContext {
+        plan,
+        image,
+        image_disks: location.disks.into_iter().collect(),
+    })
 }
