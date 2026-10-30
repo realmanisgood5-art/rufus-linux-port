@@ -1226,6 +1226,7 @@ dependencies = [
  "ferrufus-core",
  "ferrufus-testkit",
  "rfd",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
  "winit",

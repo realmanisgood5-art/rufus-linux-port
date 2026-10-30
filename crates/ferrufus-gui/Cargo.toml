@@ -28,6 +28,7 @@ winit.workspace = true
 [dev-dependencies]
 egui_kittest.workspace = true
 ferrufus-testkit.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
