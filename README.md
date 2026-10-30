@@ -15,11 +15,11 @@ for what to do, translated into safe Rust.
 
 ## Status
 
-**Milestone 1 (read-only preview).** This build cannot write to devices: it
+**Milestone 2 (read-only preview).** This build cannot write to devices: it
 has no code that opens a device or file for writing, and a source policy
 check enforces that.
 
-Milestone 1 provides:
+Milestones 1 and 2 provide:
 
 - Device discovery that applies Rufus' rules for which drives to list (USB
   drives and cards; USB hard drives only on request; internal disks never; the
@@ -27,8 +27,14 @@ Milestone 1 provides:
 - Image identification: ISO 9660/UDF labels, El Torito, ISOHybrid, MBR boot
   code (ms-sys signatures), GPT, VHD, VHDX, WIM, FFU and compressed images.
 - MD5, SHA-1, SHA-256 and SHA-512 checksums.
-- A dry-run plan for writing an image to a drive, with every safety check and
-  the exact data that would be lost.
+- An ISO file scan as Rufus does it: boot loaders (Syslinux, GRUB, Windows,
+  ReactOS, KolibriOS, UEFI), their versions, files over 4 GB, and the images
+  that only work in DD mode.
+- The format options Rufus would offer and select: partition scheme, target
+  system, file system, cluster size and label.
+- Dry-run plans for DD mode, ISO mode and plain formats, with every safety
+  check, the partitions that would be created and the exact data that would be
+  lost.
 - `ferrufus-cli` (with JSON output) and the `ferrufus` desktop application.
 
 See [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md) for the status of every
@@ -66,12 +72,14 @@ before the arguments.
 | Command | Does |
 |---|---|
 | `ferrufus-cli devices [--all] [-x] [--list-non-usb-removable] [--list-virtual]` | Lists the drives that can be written to (none is ever selected for you); `--all` shows excluded drives and why |
-| `ferrufus-cli inspect IMAGE` | Analyzes an image the way Rufus does |
+| `ferrufus-cli inspect IMAGE` | Analyzes an image (and the files of an ISO) the way Rufus does |
+| `ferrufus-cli options --device DEV [--image IMAGE]` | Shows the format options Rufus would offer and select |
 | `ferrufus-cli hash FILE [--sha512] [--algo LIST] [--expect ALGO:HEX]` | Computes checksums |
-| `ferrufus-cli plan --device DEV --image IMAGE [--no-verify]` | Shows what writing the image would do (dry run) |
+| `ferrufus-cli plan --device DEV [--image IMAGE] [--mode dd\|iso\|format] [--fs FS] [--scheme mbr\|gpt\|sfd] [--target bios\|uefi\|bios-or-uefi] [--label L] ...` | Shows what writing or formatting would do (dry run) |
 
 Every command accepts `--json` (schemas `ferrufus.devices/v1`,
-`ferrufus.image-report/v1`, `ferrufus.hash/v1`, `ferrufus.plan/v1`). Exit
+`ferrufus.image-report/v2`, `ferrufus.hash/v1`, `ferrufus.options/v1`,
+`ferrufus.plan/v2`). Exit
 codes: 0 success, 1 error, 2 usage, 3 plan blocked, 4 device not found or
 ambiguous, 5 image unreadable, 6 checksum mismatch, 130 interrupted.
 

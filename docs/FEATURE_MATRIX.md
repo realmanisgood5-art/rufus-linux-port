@@ -59,9 +59,9 @@ separately in [TESTING.md](TESTING.md).
 | ID | Feature | Upstream reference | Linux / Rust approach | Status | Milestone |
 |---|---|---|---|---|---|
 | P01 | MBR partition scheme | `src/drive.c:CreatePartition()` | Own MBR writer through the privileged boundary | ⬜ | M4 |
-| P02 | GPT partition scheme; force GPT above 2 TB | `src/rufus.c:SetPartitionSchemeAndTargetSystem()`, `src/drive.c:CreatePartition()` | Rule translation (M2), own GPT writer (M4) | ⬜ | M2/M4 |
-| P03 | Super floppy disk (no partition table) for non-bootable drives | `src/rufus.c` (`PARTITION_STYLE_SFD`) | Same | ⬜ | M2/M4 |
-| P04 | Layout calculation: 1 MB start, 260 MB ESP, 128 MB MSR, persistence, UEFI:NTFS, BIOS-compatibility partitions | `src/drive.c:CreatePartition()` | Pure calculation with property tests | ⬜ | M2 |
+| P02 | GPT partition scheme; force GPT above 2 TB | `src/rufus.c:SetPartitionSchemeAndTargetSystem()`, `src/drive.c:CreatePartition()` | Rule translation and layout done (M2); own GPT writer (M4) | 🟠 | M2/M4 |
+| P03 | Super floppy disk (no partition table) for non-bootable drives | `src/rufus.c` (`PARTITION_STYLE_SFD`) | Offered for non-bootable drives and planned with no partitions; writing in M4 | 🟠 | M2/M4 |
+| P04 | Layout calculation: 1 MB start, 260 MB ESP, 128 MB MSR, persistence, UEFI:NTFS, BIOS-compatibility partitions | `src/drive.c:CreatePartition()` | Pure calculation with property tests; the geometry is assumed to be 63 sectors per track, as Windows reports for USB drives | ✅ | M2 |
 | P05 | "Add fixes for old BIOSes" (track alignment, extra partition) | `src/drive.c:CreatePartition()` (`IDC_OLD_BIOS_FIXES`, `XP_COMPAT`) | Same layout rules | ⬜ | M4 |
 | P06 | Clear existing MBR/GPT before partitioning | `src/format.c:ClearMBRGPT()` (`MAX_SECTORS_TO_CLEAR`) | Same regions, checked writes | ⬜ | M4 |
 | P07 | MBR "UEFI" disk signature marker | `src/drive.c:CreatePartition()` (`MBR_UEFI_MARKER`) | Same | ⬜ | M4 |
@@ -80,10 +80,10 @@ separately in [TESTING.md](TESTING.md).
 | F05 | UDF (`UseUdfVersion`) | `src/format.c` | Validated `mkudffs` backend | ⬜ | M4 |
 | F06 | ReFS | `src/rufus.c:IsRefsAvailable()`, `src/format.c` (VDS) | No ReFS formatter exists on Linux | ⛔ | — |
 | F07 | ext2/ext3/ext4 (`UseExtVersion`) | `src/format_ext.c:FormatExtFs()` (bundled ext2fs) | Validated `mke2fs` backend, or Rust later | ⬜ | M4 |
-| F08 | Allowed cluster sizes and defaults per file system and drive size | `src/rufus.c:SetFileSystemAndClusterSize()`, `SetClusterSizes()` | Pure translation, including the `float` comparisons | ⬜ | M2 |
-| F09 | Proposed volume label and label sanitizing | `src/rufus.c:SetProposedLabel()`, `src/format.c:ToValidLabel()` | Pure translation | ⬜ | M2 |
+| F08 | Allowed cluster sizes and defaults per file system and drive size | `src/rufus.c:SetFileSystemAndClusterSize()`, `SetClusterSizes()` | Pure translation, including the `float` comparisons | ✅ | M2 |
+| F09 | Proposed volume label and label sanitizing | `src/rufus.c:SetProposedLabel()`, `src/format.c:ToValidLabel()` | Proposed label translated; `ToValidLabel()` sanitizing is applied when formatting (M4) | 🟠 | M2 |
 | F10 | Quick versus full format | `src/format.c:FormatThread()` (`FP_QUICK`) | Same | ⬜ | M4 |
-| F11 | File systems allowed per boot selection | `src/rufus.c:SetAllowedFileSystems()` | Pure translation | ⬜ | M2 |
+| F11 | File systems allowed per boot selection | `src/rufus.c:SetAllowedFileSystems()` | Pure translation | ✅ | M2 |
 | F12 | Disable or enable file indexing (Alt-Q) | `src/format.c:FormatThread()` | Windows Search indexing attribute | ➖ | — |
 | F13 | CheckDisk after NTFS ISO extraction | `src/format.c:CheckDisk()` | Evaluate `ntfsfix`; may be unnecessary on Linux | ⬜ | M4 |
 | F14 | Zero the drive (Alt-Z), fast-zeroing (Ctrl-Alt-Z) | `src/format.c:WriteDrive()` (`bZeroDrive`, `fast_zeroing`) | Same algorithm through the write engine | ⬜ | M3 |
@@ -93,8 +93,8 @@ separately in [TESTING.md](TESTING.md).
 
 | ID | Feature | Upstream reference | Linux / Rust approach | Status | Milestone |
 |---|---|---|---|---|---|
-| B01 | Non bootable | `src/rufus.c` (`BT_NON_BOOTABLE`) | Plan in M2, execute in M4 | ⬜ | M2/M4 |
-| B02 | Disk or ISO image | `src/rufus.c` (`BT_IMAGE`) | DD-mode planning in M1; see section E | 🟠 | M1+ |
+| B01 | Non bootable | `src/rufus.c` (`BT_NON_BOOTABLE`) | Planned as a plain format (`plan --mode format`); executed in M4 | 🟠 | M2/M4 |
+| B02 | Disk or ISO image | `src/rufus.c` (`BT_IMAGE`) | DD mode and ISO mode planned; see section E | 🟠 | M1+ |
 | B03 | MS-DOS (`diskcopy.dll` downloaded from the Microsoft symbol server) | `src/dos.c:ExtractMSDOS()`, `src/rufus.c:BootCheckThread()` | Runtime download only (Microsoft files are never redistributed) | ⬜ | M5 |
 | B04 | FreeDOS | `src/dos.c:ExtractFreeDOS()`, `res/freedos/` | Same files and patching | ⬜ | M5 |
 | B05 | Syslinux 4.07 and 6.04 (advanced mode) | `src/syslinux.c:InstallSyslinux()`, `res/syslinux/` | Translation of the installer logic | ⬜ | M4 |
@@ -110,9 +110,9 @@ separately in [TESTING.md](TESTING.md).
 |---|---|---|---|---|---|
 | I01 | ISO 9660 detection and volume label (Joliet preference rule) | `src/iso.c:ExtractISO()`, libcdio `iso9660_fs.c:get_member_id()` | Own bounded parser; exact label rule | ✅ | M1 |
 | I02 | UDF detection and logical volume label (tried before ISO 9660) | `src/iso.c:ExtractISO()` (`udf_open()`, `udf_get_logical_volume_id()`) | Own bounded parser | ✅ | M1 |
-| I03 | ISO content scan (bootloaders, EFI loaders, files over 4 GB, Windows, and so on) | `src/iso.c:check_iso_props()`, `src/rufus.c:GetBootladerInfo()` | Directory reader plus pure translation of the scan rules | ⬜ | M2 |
+| I03 | ISO content scan (bootloaders, EFI loaders, files over 4 GB, Windows, and so on) | `src/iso.c:check_iso_props()`, `src/rufus.c:GetBootladerInfo()` | Bounded ISO 9660/Joliet/Rock Ridge/UDF reader (`image/isofs.rs`) and a translation of the scan rules (`image/iso_scan.rs`); `efi.img` is read with a translation of syslinux libfat. Not analyzed yet: the Windows version (W03) and UEFI signatures (S01-S06) | ✅ | M2 |
 | I04 | ISO extraction (file-copy mode) | `src/iso.c:ExtractISO()`, `iso_extract_files()`, `udf_extract_files()` | Same, with path sanitizing | ⬜ | M4 |
-| I05 | ISOHybrid detection and the ISO-mode versus DD-mode choice (ISO mode recommended) | `src/rufus.c:ImageScanThread()`, `BootCheckThread()` | M1 offers DD mode only and reports that upstream recommends ISO mode | 🟠 | M1/M4 |
+| I05 | ISOHybrid detection and the ISO-mode versus DD-mode choice (ISO mode recommended) | `src/rufus.c:ImageScanThread()`, `BootCheckThread()` | ISO mode is the default for ISOHybrids, DD mode on request; an ISOHybrid without an ISO boot method Rufus supports is DD only. Both are planned (dry run); writing comes in M3/M4 | ✅ | M1/M4 |
 | I06 | ISO → ESP mode for small EFI images on GPT | `src/rufus.c:BootCheckThread()` (`MAX_ISO_TO_ESP_SIZE`) | Same | ⬜ | M4 |
 | I07 | Write a raw disk image (DD mode) | `src/format.c:WriteDrive()`, `FormatThread()` | Dry-run plan in M1; streaming writer and read-back verification in M3 | 🟠 | M1/M3 |
 | I08 | Compressed images (`.gz .xz .bz2 .zst .lzma .zip .Z .vtsi`) | `src/vhd.c:IsCompressedBootableImage()` (`file_assoc[]`), bled | Detection (extension plus magic) in M1; pure-Rust decompressors in M3 | 🟠 | M1/M3 |
@@ -125,7 +125,7 @@ separately in [TESTING.md](TESTING.md).
 | I15 | Image larger than the drive check (Alt-S disables it) | `src/rufus.c:BootCheckThread()` (line 1531) | **Stricter:** no 4 KB slack for raw payloads; the check cannot be disabled | ✅ | M1 |
 | I16 | Refuse an image stored on the target drive | `src/drive.c:IsSourceImageLocatedOnTargetDrive()` | The image's disk is found through its `st_dev` (running system) or its mount, then partitions and holders; an image whose disk cannot be determined blocks the plan | 🟡 | M1 |
 | I17 | Copy additional files from a zip archive (Ctrl-SELECT) | `src/rufus.c:MainCallback()`, `src/stdio.c:ExtractZip()` | Same | ⬜ | M4 |
-| I18 | Toggle Joliet (Alt-J), Rock Ridge (Alt-K), ISO support (Alt-I) | `src/iso.c` (`enable_joliet`, `enable_rockridge`, `enable_iso`) | Expert options | ⬜ | M2 |
+| I18 | Toggle Joliet (Alt-J), Rock Ridge (Alt-K), ISO support (Alt-I) | `src/iso.c` (`enable_joliet`, `enable_rockridge`, `enable_iso`) | `--no-joliet` and `--no-rock-ridge` (Alt-J, Alt-K); Alt-I (disable ISO support) is not available | 🟠 | M2 |
 | I19 | Preserve timestamps (Alt-T) | `src/iso.c` (`preserve_timestamps`) | Same | ⬜ | M4 |
 | I20 | Symbolic links (Rock Ridge and UDF) | `src/iso.c` (`has_symlinks`) | Same | ⬜ | M4 |
 | I21 | Save an optical disc to ISO (Alt-O) | `src/iso.c:OpticalDiscSaveImage()`, `src/dev.c:GetOpticalMedia()` | Read `/dev/sr*` | ⬜ | M7 |
@@ -167,7 +167,7 @@ separately in [TESTING.md](TESTING.md).
 | W14 | Restrict Windows to S mode (expert mode) | `src/wue.c:CreateUnattendXml()` (`UNATTEND_FORCE_S_MODE`) | Same | ⬜ | M6 |
 | W15 | Windows To Go | `src/wue.c:SetupWinToGo()` (wimlib apply, `bcdboot`) | Needs WIM apply and a BCD store writer | ⛔ | — |
 | W16 | Prevent Windows To Go from accessing internal disks | `src/wue.c:CreateUnattendXml()` (`UNATTEND_OFFLINE_INTERNAL_DRIVES`) | Depends on W15 | ⛔ | — |
-| W17 | Detect an existing `$OEM$/$$/Panther/unattend.xml` | `src/iso.c:check_iso_props()` | Scan rule | ⬜ | M2 |
+| W17 | Detect an existing `$OEM$/$$/Panther/unattend.xml` | `src/iso.c:check_iso_props()` | Scan rule | ✅ | M2 |
 | W18 | Choose among multiple Windows editions | `src/wue.c:SetWinToGoIndex()`, `GetEditions()` | Same | ⬜ | M6 |
 
 ## H. Linux and other distributions
@@ -176,10 +176,10 @@ separately in [TESTING.md](TESTING.md).
 |---|---|---|---|---|---|
 | X01 | Persistent partition: Ubuntu `casper-rw` or Debian `persistence` with `persistence.conf` | `src/format.c:FormatThread()`, `src/format_ext.c:FormatExtFs()`, `src/iso.c:fix_config()` | Per-distribution mechanism, as upstream | ⬜ | M5 |
 | X02 | Persistence size controls | `src/ui.c:SetPersistenceSize()` (`PROJECTED_SIZE_RATIO`) | Same | ⬜ | M5 |
-| X03 | Decide whether an image supports persistence | `src/rufus.h` (`HAS_PERSISTENCE`) | Same rule | ⬜ | M2 |
+| X03 | Decide whether an image supports persistence | `src/rufus.h` (`HAS_PERSISTENCE`) | Same rule | ✅ | M2 |
 | X04 | Red Hat 8+ derivatives: `inst.stage2` → `inst.repo` | `src/rufus.c:ImageScanThread()` (`redhat8_derivative[]`), `src/iso.c:fix_config()` | Same patterns | ⬜ | M4 |
-| X05 | Force DD mode for SUSE, Manjaro, Pop!_OS and Proxmox images | `src/rufus.c:ImageScanThread()`, `src/iso.c:check_iso_props()` | Same rules | ⬜ | M2 |
-| X06 | Detect the file systems supported by an EFI GRUB | `src/iso.c:GetGrubFs()` | Same | ⬜ | M2 |
+| X05 | Force DD mode for SUSE, Manjaro, Pop!_OS and Proxmox images | `src/rufus.c:ImageScanThread()`, `src/iso.c:check_iso_props()` | Same rules | ✅ | M2 |
+| X06 | Detect the file systems supported by an EFI GRUB | `src/iso.c:GetGrubFs()` | Same | ✅ | M2 |
 | X07 | Patch archiso `loader/entries/*.conf` | `src/iso.c:check_iso_props()`, `fix_config()` | Same | ⬜ | M4 |
 | X08 | Replace a broken `bootx64.efi` symlink (Linux Mint) | `src/iso.c:check_iso_props()` | Same | ⬜ | M4 |
 
@@ -244,7 +244,7 @@ separately in [TESTING.md](TESTING.md).
 |---|---|---|---|---|---|
 | C01 | `-x`, `--extra-devs` (list USB hard drives) | `src/rufus.c:WinMain()` | `ferrufus-cli devices -x`, GUI `-x` | ✅ | M1 |
 | C02 | `-i PATH`, `--iso=PATH` (preselect an image) | `src/rufus.c:WinMain()` | GUI `-i/--iso`; the CLI uses `--image` | 🟡 | M1 |
-| C03 | `-f FS`, `--filesystem=FS` (preferred file system) | `src/rufus.c:WinMain()` (`preselected_fs`) | Same | ⬜ | M2 |
+| C03 | `-f FS`, `--filesystem=FS` (preferred file system) | `src/rufus.c:WinMain()` (`preselected_fs`) | `--fs` sets the file system choice (Rufus' `-f` preselects it); the GUI has no `-f` yet | 🟠 | M2 |
 | C04 | `-l LOCALE`, `--locale=LOCALE` | `src/rufus.c:WinMain()` | Same | ⬜ | M8 |
 | C05 | `-g`, `--gui` and the `rufus.com` console hogger | `src/rufus.c:SetHogger()` | Separate `ferrufus` and `ferrufus-cli` binaries | ➖ | — |
 | C06 | `-w TIMEOUT`, `--wait=TIMEOUT` (application mutex) | `src/rufus.c:WinMain()` | Single-instance handling, evaluate | ⬜ | M8 |

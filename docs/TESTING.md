@@ -60,6 +60,20 @@ No binary fixtures are committed. `ferrufus-testkit` builds what tests need:
   table, GPT (512- and 4096-byte sectors, valid or corrupted CRCs), ISO 9660
   primary and Joliet volume descriptors, El Torito boot catalogs, UDF anchor and
   logical volume descriptors, VHD footers, VHDX headers, WIM headers.
+- `isofs::IsoFs`: ISO images with real directory trees (plain ISO 9660 names,
+  Rock Ridge `NM`/`SL`/`PX`/`CE`/`PL`, Joliet, path tables, El Torito,
+  multi-extent files) and an optional UDF file system; `efi_fat_image()` builds
+  a FAT12 `efi.img`. The ISO 9660, Joliet and Rock Ridge output and the FAT
+  image were cross-checked with pycdlib and pyfatfs during development (these
+  Python tools are not project dependencies).
+
+Optional checks against real data, skipped unless enabled:
+
+- `FERRUFUS_TEST_ISOS=<dir>`: `tests/corpus.rs` inspects and scans every
+  `.iso` in the directory (run locally on netboot.xyz 2.0.89; no ISO is
+  committed).
+- `FERRUFUS_UPSTREAM=<rufus checkout>`: compares constants taken from upstream
+  resources (the size of `res/uefi/uefi-ntfs.img`).
 
 Generated tables (ms-sys MBR boot code, HDD heuristic tables) are checked
 against the upstream sources they came from by regenerating them
@@ -87,6 +101,16 @@ against the upstream sources they came from by regenerating them
 | Boot tests | M4+ | QEMU with SeaBIOS (BIOS) and OVMF (UEFI, with and without Secure Boot) booting the produced media; KVM when the runner provides it |
 | Upstream comparison vectors | M2+ | Inputs and Rufus v4.15 results (cluster sizes, partition layouts, labels, scan reports, `unattend.xml`) recorded once on Windows and replayed in CI |
 | Hardware validation | Release readiness | A documented matrix of real USB drives, card readers and target PCs, run by hand |
+
+## Milestone 2 coverage
+
+| Area | Tested by |
+|---|---|
+| ISO reader | `tests/isofs.rs`: names (raw, translated, Joliet, Rock Ridge incl. continuation areas), symbolic links, multi-extent files, the `[BOOT]` directory, UDF directories and files, `ReadISOFileToBuffer()` lookup rules, and a property test with corrupted images |
+| ISO scan | `tests/iso_scan.rs` and `tests/inspect.rs`: Ubuntu-, Windows-, WinPE-, Syslinux-, Solus-, Mint- and Arch-like trees, labels, the projected size, ISO-mode exclusions |
+| Options and layout | `src/options.rs`, `src/layout.rs` and `tests/options.rs`: cluster tables, allowed file systems, partition scheme and target rules, defaults for Windows and Linux ISOs, a layout property test |
+| Plans | `tests/plan.rs`: ISO-mode and format plans, compatibility failures, downloads Rufus would need, warnings before every write |
+| Front ends | `crates/ferrufus-cli/tests/cli.rs` (`options`, `plan --mode`), `crates/ferrufus-gui/tests/ui.rs` (Format Options section, ISO-mode review) |
 
 ## Milestone 1 acceptance criteria
 
